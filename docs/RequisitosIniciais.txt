@@ -1,0 +1,563 @@
+{
+  "actors": [
+    {
+      "id": "e8f6e3fd-c325-4ce7-b206-278b6867b405",
+      "text": "Cientista de dados",
+      "type": "istar.Actor",
+      "x": 462,
+      "y": 52,
+      "customProperties": {},
+      "nodes": [
+        {
+          "id": "node_user_g1",
+          "text": "Resolver problema de ciência de dados",
+          "type": "istar.Goal",
+          "x": 611,
+          "y": 73,
+          "customProperties": {}
+        },
+        {
+          "id": "node_user_t1",
+          "text": "Fornecer dataset e metas analíticas",
+          "type": "istar.Task",
+          "x": 483,
+          "y": 136,
+          "customProperties": {}
+        },
+        {
+          "id": "node_user_q1",
+          "text": "Confiabilidade e auditabilidade",
+          "type": "istar.Quality",
+          "x": 613,
+          "y": 168,
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "id": "agent_model",
+      "text": "ModelAgent",
+      "type": "istar.Agent",
+      "x": 957,
+      "y": 414,
+      "customProperties": {},
+      "nodes": [
+        {
+          "id": "node_mod_g1",
+          "text": "Modelos preditivos treinados",
+          "type": "istar.Goal",
+          "x": 994,
+          "y": 488,
+          "customProperties": {}
+        },
+        {
+          "id": "node_mod_t1",
+          "text": "Treinar hipóteses concorrentes",
+          "type": "istar.Task",
+          "x": 997,
+          "y": 592,
+          "customProperties": {}
+        },
+        {
+          "id": "node_mod_t2",
+          "text": "Executar inferência e validação",
+          "type": "istar.Task",
+          "x": 1109,
+          "y": 430,
+          "customProperties": {}
+        },
+        {
+          "id": "node_mod_q1",
+          "text": "Alto desempenho preditivo",
+          "type": "istar.Quality",
+          "x": 1116,
+          "y": 533,
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "id": "agent_pcs",
+      "text": "PCSAgent",
+      "type": "istar.Agent",
+      "x": 497,
+      "y": 384,
+      "customProperties": {},
+      "nodes": [
+        {
+          "id": "node_pcs_g1",
+          "text": "Garantir princípios PCS",
+          "type": "istar.Goal",
+          "x": 672,
+          "y": 476,
+          "customProperties": {}
+        },
+        {
+          "id": "node_pcs_t1",
+          "text": "Gerar perturbações (k amostras)",
+          "type": "istar.Task",
+          "x": 517,
+          "y": 507,
+          "customProperties": {}
+        },
+        {
+          "id": "node_pcs_t2",
+          "text": "Auditar estabilidade preditiva",
+          "type": "istar.Task",
+          "x": 615,
+          "y": 403,
+          "customProperties": {}
+        },
+        {
+          "id": "node_pcs_q1",
+          "text": "Estabilidade e robustez",
+          "type": "istar.Quality",
+          "x": 617,
+          "y": 567,
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "id": "agent_explore",
+      "text": "ExploreAgent",
+      "type": "istar.Agent",
+      "x": 74,
+      "y": 386,
+      "customProperties": {},
+      "nodes": [
+        {
+          "id": "node_exp_g1",
+          "text": "Dados pré-processados adequadamente",
+          "type": "istar.Goal",
+          "x": 204,
+          "y": 502,
+          "customProperties": {}
+        },
+        {
+          "id": "node_exp_t1",
+          "text": "Executar limpeza e imputação",
+          "type": "istar.Task",
+          "x": 74,
+          "y": 487,
+          "customProperties": {}
+        },
+        {
+          "id": "node_exp_t2",
+          "text": "Adotar plano alternativo (contingência)",
+          "type": "istar.Task",
+          "x": 213,
+          "y": 412,
+          "customProperties": {}
+        },
+        {
+          "id": "node_exp_q1",
+          "text": "Integridade dos dados",
+          "type": "istar.Quality",
+          "x": 188,
+          "y": 598,
+          "customProperties": {}
+        }
+      ]
+    }
+  ],
+  "orphans": [],
+  "dependencies": [
+    {
+      "id": "dep_dataset_bruto",
+      "text": "Dataset bruto e metas",
+      "type": "istar.Resource",
+      "x": 296,
+      "y": 207,
+      "customProperties": {},
+      "source": "node_exp_g1",
+      "target": "node_user_t1"
+    },
+    {
+      "id": "dep_pcs_validado",
+      "text": "Resultados auditados por PCS",
+      "type": "istar.Quality",
+      "x": 645,
+      "y": 279,
+      "customProperties": {},
+      "source": "node_user_q1",
+      "target": "node_pcs_t2"
+    },
+    {
+      "id": "dep_predicoes_finais",
+      "text": "Predições e relatório final",
+      "type": "istar.Resource",
+      "x": 931,
+      "y": 207,
+      "customProperties": {},
+      "source": "node_user_g1",
+      "target": "node_mod_t2"
+    },
+    {
+      "id": "dep_validacao_estabilidade",
+      "text": "Validação de estabilidade PCS",
+      "type": "istar.Quality",
+      "x": 359,
+      "y": 271,
+      "customProperties": {},
+      "source": "node_exp_t2",
+      "target": "node_pcs_t2"
+    },
+    {
+      "id": "dep_autorizacao_treino",
+      "text": "Autorização para modelagem",
+      "type": "istar.Goal",
+      "x": 831,
+      "y": 516,
+      "customProperties": {},
+      "source": "node_mod_t1",
+      "target": "node_pcs_g1"
+    },
+    {
+      "id": "dep_pred_perturbadas",
+      "text": "Predições das amostras perturbadas",
+      "type": "istar.Resource",
+      "x": 859,
+      "y": 298,
+      "customProperties": {},
+      "source": "node_pcs_t2",
+      "target": "node_mod_t2"
+    },
+    {
+      "id": "dep_matriz_features",
+      "text": "Matriz de features aprovadas",
+      "type": "istar.Resource",
+      "x": 521,
+      "y": 641,
+      "customProperties": {},
+      "source": "node_mod_t1",
+      "target": "node_exp_g1"
+    },
+    {
+      "id": "d5beca63-1301-4988-afd0-16873312a9a5",
+      "text": "Dataset pré-processado",
+      "type": "istar.Resource",
+      "x": 366,
+      "y": 468,
+      "customProperties": {
+        "Description": ""
+      },
+      "source": "node_pcs_t1",
+      "target": "node_exp_g1"
+    }
+  ],
+  "links": [
+    {
+      "id": "3d98e52f-3ac3-4e65-89e7-0539a1778587",
+      "type": "istar.DependencyLink",
+      "source": "d5beca63-1301-4988-afd0-16873312a9a5",
+      "target": "node_exp_g1"
+    },
+    {
+      "id": "1568c9ef-5af3-431b-93b0-acd0060d951c",
+      "type": "istar.DependencyLink",
+      "source": "node_pcs_t1",
+      "target": "d5beca63-1301-4988-afd0-16873312a9a5"
+    },
+    {
+      "id": "d732fead-a37c-4168-9ccd-01bb2fa4ac92",
+      "type": "istar.DependencyLink",
+      "source": "dep_matriz_features",
+      "target": "node_exp_g1"
+    },
+    {
+      "id": "23132d14-0c33-4916-bf6c-4c3d8a657358",
+      "type": "istar.DependencyLink",
+      "source": "node_mod_t1",
+      "target": "dep_matriz_features"
+    },
+    {
+      "id": "dc124dd2-65e2-45ef-8ad6-c64b76689743",
+      "type": "istar.DependencyLink",
+      "source": "dep_pred_perturbadas",
+      "target": "node_mod_t2"
+    },
+    {
+      "id": "37dff877-d523-494f-8dbb-e8321fe456d6",
+      "type": "istar.DependencyLink",
+      "source": "node_pcs_t2",
+      "target": "dep_pred_perturbadas"
+    },
+    {
+      "id": "b8ba1315-d699-4c8b-906a-653c6c050b5f",
+      "type": "istar.DependencyLink",
+      "source": "dep_autorizacao_treino",
+      "target": "node_pcs_g1"
+    },
+    {
+      "id": "9493bd1e-ad11-4727-8369-ac39346303c2",
+      "type": "istar.DependencyLink",
+      "source": "node_mod_t1",
+      "target": "dep_autorizacao_treino"
+    },
+    {
+      "id": "7595a985-46f5-47e1-b839-2887e7359bf2",
+      "type": "istar.DependencyLink",
+      "source": "dep_validacao_estabilidade",
+      "target": "node_pcs_t2"
+    },
+    {
+      "id": "748346a7-abcd-426f-9cf9-13fd7dbcd82b",
+      "type": "istar.DependencyLink",
+      "source": "node_exp_t2",
+      "target": "dep_validacao_estabilidade"
+    },
+    {
+      "id": "68da73d5-6742-4abc-947c-ab29d62f0d9e",
+      "type": "istar.DependencyLink",
+      "source": "dep_predicoes_finais",
+      "target": "node_mod_t2"
+    },
+    {
+      "id": "d7bbdb3b-3609-4d7c-ac0c-13f56f892326",
+      "type": "istar.DependencyLink",
+      "source": "node_user_g1",
+      "target": "dep_predicoes_finais"
+    },
+    {
+      "id": "eee89b7d-3ee3-4e1a-8ad3-e6607640aade",
+      "type": "istar.DependencyLink",
+      "source": "dep_pcs_validado",
+      "target": "node_pcs_t2"
+    },
+    {
+      "id": "dbbf0852-6706-42fb-b64a-9dce3f2b62c0",
+      "type": "istar.DependencyLink",
+      "source": "node_user_q1",
+      "target": "dep_pcs_validado"
+    },
+    {
+      "id": "3321400c-1224-4ec0-b6b4-d36000ffeddc",
+      "type": "istar.DependencyLink",
+      "source": "dep_dataset_bruto",
+      "target": "node_user_t1"
+    },
+    {
+      "id": "fffb2aec-5cda-4e24-89ce-eda3449eed36",
+      "type": "istar.DependencyLink",
+      "source": "node_exp_g1",
+      "target": "dep_dataset_bruto"
+    },
+    {
+      "id": "be297f1d-3329-4e79-9124-64f9c7556ad6",
+      "type": "istar.AndRefinementLink",
+      "source": "node_user_t1",
+      "target": "node_user_g1"
+    },
+    {
+      "id": "bab71ec1-1557-456d-b08d-28065c193356",
+      "type": "istar.QualificationLink",
+      "source": "node_user_q1",
+      "target": "node_user_g1"
+    },
+    {
+      "id": "34f29aca-55df-46eb-b05d-64790d45abe3",
+      "type": "istar.OrRefinementLink",
+      "source": "node_exp_t1",
+      "target": "node_exp_g1"
+    },
+    {
+      "id": "3dc7039b-8085-4f61-9fba-c5d359c6a6b6",
+      "type": "istar.OrRefinementLink",
+      "source": "node_exp_t2",
+      "target": "node_exp_g1"
+    },
+    {
+      "id": "ce5276be-8b80-46d0-97fe-dc05ba4b2d3d",
+      "type": "istar.QualificationLink",
+      "source": "node_exp_q1",
+      "target": "node_exp_g1"
+    },
+    {
+      "id": "b9ae5f52-8e93-485f-a36f-57c9b77769b6",
+      "type": "istar.AndRefinementLink",
+      "source": "node_pcs_t1",
+      "target": "node_pcs_g1"
+    },
+    {
+      "id": "32c3d8e3-cff1-4018-b3c6-e327b916de1b",
+      "type": "istar.AndRefinementLink",
+      "source": "node_pcs_t2",
+      "target": "node_pcs_g1"
+    },
+    {
+      "id": "6b7c4d1f-cffe-47a5-86ba-a5477a268611",
+      "type": "istar.QualificationLink",
+      "source": "node_pcs_q1",
+      "target": "node_pcs_g1"
+    },
+    {
+      "id": "6690581d-4708-4084-ba19-765a9e440ff4",
+      "type": "istar.AndRefinementLink",
+      "source": "node_mod_t1",
+      "target": "node_mod_g1"
+    },
+    {
+      "id": "9050cbbc-aaf4-4441-b115-875e5df29f91",
+      "type": "istar.AndRefinementLink",
+      "source": "node_mod_t2",
+      "target": "node_mod_g1"
+    },
+    {
+      "id": "cdd51534-4fc9-4902-8498-0d17ae2ad610",
+      "type": "istar.QualificationLink",
+      "source": "node_mod_q1",
+      "target": "node_mod_g1"
+    }
+  ],
+  "display": {
+    "e8f6e3fd-c325-4ce7-b206-278b6867b405": {
+      "backgroundColor": "#FA9C9B"
+    },
+    "node_user_g1": {
+      "width": 95.25,
+      "height": 61.453125
+    },
+    "node_user_t1": {
+      "backgroundColor": "#80FAEB",
+      "width": 98.25,
+      "height": 60.453125
+    },
+    "node_user_q1": {
+      "backgroundColor": "#FAC953",
+      "width": 99.2799072265625,
+      "height": 62.45948791503906
+    },
+    "agent_model": {
+      "backgroundColor": "#FAF662"
+    },
+    "node_mod_g1": {
+      "width": 96.25,
+      "height": 49.84375
+    },
+    "node_mod_t1": {
+      "backgroundColor": "#80FAEB",
+      "width": 97.25,
+      "height": 45.84375
+    },
+    "node_mod_t2": {
+      "backgroundColor": "#80FAEB",
+      "width": 97.25,
+      "height": 47.84375
+    },
+    "node_mod_q1": {
+      "backgroundColor": "#FAC953"
+    },
+    "agent_pcs": {
+      "backgroundColor": "#FAF662"
+    },
+    "node_pcs_g1": {
+      "width": 95.25,
+      "height": 46.453125
+    },
+    "node_pcs_t1": {
+      "backgroundColor": "#80FAEB",
+      "width": 97.25,
+      "height": 48.84375
+    },
+    "node_pcs_t2": {
+      "backgroundColor": "#80FAEB",
+      "width": 94.25,
+      "height": 47.84375
+    },
+    "node_pcs_q1": {
+      "backgroundColor": "#FAC953"
+    },
+    "agent_explore": {
+      "backgroundColor": "#FAF662"
+    },
+    "node_exp_g1": {
+      "width": 103.25,
+      "height": 58.453125
+    },
+    "node_exp_t1": {
+      "backgroundColor": "#80FAEB",
+      "width": 99.25,
+      "height": 53.453125
+    },
+    "node_exp_t2": {
+      "backgroundColor": "#80FAEB",
+      "width": 101.25,
+      "height": 52.453125
+    },
+    "node_exp_q1": {
+      "backgroundColor": "#FAC953"
+    },
+    "dep_dataset_bruto": {
+      "backgroundColor": "#FABEFA"
+    },
+    "dep_pcs_validado": {
+      "backgroundColor": "#FAC953"
+    },
+    "dep_predicoes_finais": {
+      "backgroundColor": "#FABEFA"
+    },
+    "dep_validacao_estabilidade": {
+      "backgroundColor": "#FAC953"
+    },
+    "dep_autorizacao_treino": {
+      "width": 95.25,
+      "height": 46.453125
+    },
+    "dep_pred_perturbadas": {
+      "backgroundColor": "#FABEFA",
+      "width": 95.25,
+      "height": 49.453125
+    },
+    "dep_matriz_features": {
+      "backgroundColor": "#FABEFA",
+      "width": 95.25,
+      "height": 51.84375
+    },
+    "d5beca63-1301-4988-afd0-16873312a9a5": {
+      "backgroundColor": "#FABEFA"
+    },
+    "d732fead-a37c-4168-9ccd-01bb2fa4ac92": {
+      "vertices": [
+        {
+          "x": 395,
+          "y": 584
+        }
+      ]
+    },
+    "7595a985-46f5-47e1-b839-2887e7359bf2": {
+      "vertices": [
+        {
+          "x": 561,
+          "y": 326
+        }
+      ]
+    },
+    "748346a7-abcd-426f-9cf9-13fd7dbcd82b": {
+      "vertices": [
+        {
+          "x": 300,
+          "y": 357
+        }
+      ]
+    },
+    "fffb2aec-5cda-4e24-89ce-eda3449eed36": {
+      "vertices": [
+        {
+          "x": 150,
+          "y": 358
+        }
+      ]
+    }
+  },
+  "tool": "pistar.2.1.0",
+  "istar": "2.0",
+  "saveDate": "Sat, 07 Nov 2026 19:04:54 GMT",
+  "diagram": {
+    "width": 1350,
+    "height": 800,
+    "customProperties": {
+      "Description": "Projeto Arquitetural VDS-BDI (SR detalhado)"
+    }
+  }
+}
