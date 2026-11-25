@@ -11,6 +11,13 @@ py -3.12 -m venv .venv
 
 ### Contrato entre os agentes
 
+O ambiente separa a amostra de Bank Churn em 75% para treino e 25% para
+teste, com estratificação por `Exited` e semente 42. Ambos os planos de
+limpeza usam o mesmo treino. Os dados simulados de contingência, o ajuste
+da imputação e da codificação, a auditoria da limpeza e as três amostras
+bootstrap usam apenas essa partição. Na modelagem, o ambiente aplica ao
+teste o pré-processamento aprovado e avalia todos os modelos nas mesmas linhas.
+
 Os dados tabulares ficam no ambiente compartilhado. Os agentes trocam metas,
 decisões e metadados pelas mensagens abaixo.
 

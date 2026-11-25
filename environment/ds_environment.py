@@ -10,12 +10,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-from tools.ml_tools import (
-    encode_categorical_tools,
-    fill_missing_values_tools,
-    handle_outliers_tools,
-    remove_columns_tools,
-)
+from tools.preprocessing import criar_preprocessador
 from tools.unit_test import run_data_cleaning_tests
 
 
@@ -24,23 +19,14 @@ class DataScienceEnv(Environment):
 
     def __init__(self, env_name: Optional[str] = "DataScienceEnv"):
         super().__init__(env_name)
+        self.raw_test: Optional[pd.DataFrame] = None
+        self.preprocessador = None
         self.raw_data: Optional[pd.DataFrame] = None
         self.processed_data: Optional[pd.DataFrame] = None
         self.perturbed_datasets: List[pd.DataFrame] = []
         self.attempt_counter: int = 0
         self.target_column: str = "Exited"
         self.identifier_columns: List[str] = ["id", "CustomerId", "Surname"]
-        self.numeric_columns: List[str] = [
-            "CreditScore",
-            "Age",
-            "Tenure",
-            "Balance",
-            "NumOfProducts",
-            "HasCrCard",
-            "IsActiveMember",
-            "EstimatedSalary",
-        ]
-        self.categorical_columns: List[str] = ["Geography", "Gender"]
 
     def carregar_dataset(
         self,
@@ -51,22 +37,31 @@ class DataScienceEnv(Environment):
         """Carrega e armazena os dados brutos no ambiente."""
         df = pd.read_csv(path)
         if sample_size and len(df) > sample_size:
-            df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+            df = df.sample(n=sample_size, random_state=42)
 
+        df, test = train_test_split(
+            df, test_size=0.25, stratify=df[self.target_column], random_state=42
+        )
+        df = df.copy()
         null_counts = df.isnull().sum()
         # Injeta nulos e outliers controlados na amostra em memória se o dataset original for 100% preenchido
         if null_counts.sum() == 0 and "Age" in df.columns:
-            np.random.seed(42)
+            rng = np.random.default_rng(42)
             for col in ["Age", "Balance", "EstimatedSalary"]:
                 if col in df.columns:
-                    mask = np.random.rand(len(df)) < 0.05
+                    mask = rng.random(len(df)) < 0.05
                     df.loc[mask, col] = np.nan
-            outlier_idx = np.random.choice(df.index, size=15, replace=False)
+            outlier_idx = rng.choice(df.index, size=min(15, len(df)), replace=False)
             df.loc[outlier_idx[:8], "Balance"] = df["Balance"].max() * 3.5
             df.loc[outlier_idx[8:], "EstimatedSalary"] = df["EstimatedSalary"].max() * 4.0
             null_counts = df.isnull().sum()
 
         self.raw_data = df
+        self.raw_test = test
+        self.processed_data = None
+        self.preprocessador = None
+        self.perturbed_datasets = []
+        self.attempt_counter = 0
         cols_with_nulls = null_counts[null_counts > 0].to_dict()
 
         return {
@@ -90,89 +85,38 @@ class DataScienceEnv(Environment):
             "has_nulls": len(null_dict) > 0,
         }
 
-    def executar_limpeza_padrao(self, agt: str) -> Dict[str, Any]:
-        """Executa o Plano A: imputação ingênua (média/moda) sem tratamento de outliers."""
+    def _features(self, dados: pd.DataFrame) -> pd.DataFrame:
+        return dados.drop(columns=[self.target_column, *self.identifier_columns], errors="ignore")
+
+    def _preparar_treino(self, agt: str, robusto: bool) -> Dict[str, Any]:
         if self.raw_data is None:
             self.carregar_dataset(agt)
 
-        self.attempt_counter += 1
-        df = self.raw_data.copy()
-
-        # Remove identificadores sem poder preditivo
-        df = remove_columns_tools(df, columns=self.identifier_columns)
-
-        # Imputação básica por média para numéricas e moda para categóricas
-        missing_targets = [c for c in df.columns if df[c].isna().any()]
-        if missing_targets:
-            df = fill_missing_values_tools(df, target_columns=missing_targets, method="auto")
-
-        # Codificação de categóricas
-        cats_to_encode = [c for c in self.categorical_columns if c in df.columns]
-        if cats_to_encode:
-            df = encode_categorical_tools(df, target_columns=cats_to_encode, method="onehot")
-
-        # Executa testes unitários de limpeza
+        features = self._features(self.raw_data)
+        preprocessador = criar_preprocessador(features, robusto)
+        df = preprocessador.fit_transform(features)
+        df[self.target_column] = self.raw_data[self.target_column]
         test_results = run_data_cleaning_tests(df, original_data_or_path=self.raw_data)
-        self.processed_data = df
 
+        self.preprocessador = preprocessador
+        self.processed_data = df
+        self.perturbed_datasets = []
+        self.attempt_counter += 1
         return {
             "attempt": self.attempt_counter,
-            "strategy": "plano_a_padrao",
+            "strategy": "plano_b_contingencia_knn_iqr" if robusto else "plano_a_padrao",
             "shape": df.shape,
             "tests_passed": test_results["all_passed"],
             "report": test_results["report"],
         }
+
+    def executar_limpeza_padrao(self, agt: str) -> Dict[str, Any]:
+        return self._preparar_treino(agt, robusto=False)
 
     executar_limpeza_padrao_env = executar_limpeza_padrao
-    executar_limpeza_robusta_env = None
 
     def executar_limpeza_robusta(self, agt: str) -> Dict[str, Any]:
-        """Executa o Plano B (Contingência): imputação KNN e tratamento de outliers com IQR."""
-        if self.raw_data is None:
-            self.carregar_dataset(agt)
-
-        self.attempt_counter += 1
-        df = self.raw_data.copy()
-
-        # Remove identificadores
-        df = remove_columns_tools(df, columns=self.identifier_columns)
-
-        # Trata outliers com IQR antes ou durante a imputação para evitar contaminação
-        existing_numeric = [c for c in self.numeric_columns if c in df.columns and c != self.target_column]
-        df = handle_outliers_tools(
-            df,
-            target_columns=existing_numeric,
-            method="iqr",
-            strategy="clip",
-            sensitivity="medium",
-        )
-
-        # Imputação robusta baseada em vizinhos mais próximos (KNN)
-        missing_targets = [c for c in df.columns if df[c].isna().any()]
-        if missing_targets:
-            df = fill_missing_values_tools(
-                df,
-                target_columns=missing_targets,
-                method="knn",
-                n_neighbors=5,
-            )
-
-        # Codificação de categóricas
-        cats_to_encode = [c for c in self.categorical_columns if c in df.columns]
-        if cats_to_encode:
-            df = encode_categorical_tools(df, target_columns=cats_to_encode, method="onehot")
-
-        # Executa testes unitários de limpeza
-        test_results = run_data_cleaning_tests(df, original_data_or_path=self.raw_data)
-        self.processed_data = df
-
-        return {
-            "attempt": self.attempt_counter,
-            "strategy": "plano_b_contingencia_knn_iqr",
-            "shape": df.shape,
-            "tests_passed": test_results["all_passed"],
-            "report": test_results["report"],
-        }
+        return self._preparar_treino(agt, robusto=True)
 
     executar_limpeza_robusta_env = executar_limpeza_robusta
 
@@ -194,7 +138,7 @@ class DataScienceEnv(Environment):
                 n=n_samples,
                 replace=True,
                 random_state=42 + i * 17,
-            ).reset_index(drop=True)
+            )
             self.perturbed_datasets.append(perturbed_df)
 
         return [{"index": i + 1, "shape": d.shape} for i, d in enumerate(self.perturbed_datasets)]
@@ -246,16 +190,13 @@ class DataScienceEnv(Environment):
 
     def treinar_e_avaliar_hipoteses(self, agt: str) -> Dict[str, Any]:
         """Treina hipóteses concorrentes (Random Forest e Logistic Regression) e avalia perturbações."""
-        if self.processed_data is None:
+        if self.processed_data is None or self.raw_test is None or self.preprocessador is None:
             raise ValueError("Dados processados indisponíveis para modelagem.")
 
-        df = self.processed_data.copy()
-        X = df.drop(columns=[self.target_column])
-        y = df[self.target_column].astype(int)
-
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.25, random_state=42, stratify=y
-        )
+        X_train = self.processed_data.drop(columns=[self.target_column])
+        y_train = self.processed_data[self.target_column].astype(int)
+        X_test = self.preprocessador.transform(self._features(self.raw_test))
+        y_test = self.raw_test[self.target_column].astype(int)
 
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
