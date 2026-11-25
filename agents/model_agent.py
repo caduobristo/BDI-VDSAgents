@@ -46,6 +46,10 @@ class ModelAgent(Agent):
         print("[ModelAgent]: Submetendo predições perturbadas para auditoria final do PCSAgent...")
         self.send("PCSAgent", achieve, Goal("auditar_predicoes_modelos", predictions_data))
 
+    @pl(gain, Belief("pre_processamento_reprovado", MaspyAny))
+    def encerrar_por_reprovacao(self, src: str, motivo: str) -> None:
+        self.stop_cycle()
+
     @pl(gain, Belief("certificacao_pcs_emitida", MaspyAny))
     def entregar_relatorio_final(self, src: str, certificate: Any) -> None:
         print("\n" + "=" * 75)

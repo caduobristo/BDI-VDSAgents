@@ -1,1 +1,30 @@
 # BDI-VDSAgents
+
+O exemplo de Bank Churn usa o MASPY para coordenar três agentes.
+Na raiz do clone, com Python 3.12 no Windows, execute:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
+```
+
+### Contrato entre os agentes
+
+Os dados tabulares ficam no ambiente compartilhado. Os agentes trocam metas,
+decisões e metadados pelas mensagens abaixo.
+
+| Origem → destino | Mensagem | Conteúdo e efeito |
+| --- | --- | --- |
+| Explore → PCS | `auditar_dados_pre_processados` | A tentativa, a estratégia, as dimensões e o resultado das validações (`attempt`, `strategy`, `shape`, `tests_passed`, `report`) seguem para auditoria. |
+| PCS → Explore | `adotar_plano_alternativo` | O motivo da primeira reprovação aciona o Plano B. |
+| PCS → Explore e Model | `pre_processamento_reprovado` | Uma segunda reprovação encerra a execução antes do treino. |
+| PCS → Explore / PCS → Model | `estabilidade_pcs_aprovada` / `autorizacao_para_modelagem` | O Explore pode liberar as features e o Model recebe autorização para treinar. |
+| Explore → Model | `matriz_features_aprovadas` | Identifica as features, o alvo e as dimensões. O Model aguarda tanto essa mensagem quanto a autorização do PCS. |
+| Model → PCS / PCS → Model | `auditar_predicoes_modelos` / `certificacao_pcs_emitida` | O Model envia as métricas das duas hipóteses, o tempo e a concordância. O PCS devolve o certificado usado no relatório. |
+
+O PCS verifica o relatório de limpeza antes de avaliar as três amostras
+bootstrap. A estabilidade é 1 menos a metade da diferença absoluta média entre
+as matrizes de correlação. O limiar padrão é 0,75. Para Bank Churn, um máximo
+superior ao dobro do percentil 99 em `Balance` ou `EstimatedSalary` também
+reprova o pré-processamento.

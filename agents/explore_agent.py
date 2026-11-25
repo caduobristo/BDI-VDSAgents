@@ -51,6 +51,10 @@ class ExploreAgent(Agent):
         print("[ExploreAgent]: Plano B finalizado. Reenviando dados pré-processados para auditoria PCS...")
         self.send("PCSAgent", achieve, Goal("auditar_dados_pre_processados", res))
 
+    @pl(gain, Belief("pre_processamento_reprovado", MaspyAny))
+    def encerrar_por_reprovacao(self, src: str, motivo: str) -> None:
+        self.stop_cycle()
+
     @pl(gain, Belief("estabilidade_pcs_aprovada", MaspyAny))
     def plano_liberacao_features(self, src: str, status: Any) -> None:
         print("\n[ExploreAgent]: Estabilidade PCS aprovada! Executando Plano de Liberação...")

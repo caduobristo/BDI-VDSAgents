@@ -32,7 +32,9 @@ def main():
     # Dispara o ciclo de raciocínio de todos os agentes
     admin.start_system()
 
-    print("\n[VDS-BDI]: Execução do pipeline multiagente concluída com sucesso.")
+    if not model.modelagem_concluida:
+        raise SystemExit("Pipeline encerrado antes da modelagem. Consulte a auditoria PCS.")
+    print("\n[VDS-BDI]: Execução do pipeline multiagente concluída.")
 
 
 if __name__ == "__main__":

@@ -216,33 +216,20 @@ class DataScienceEnv(Environment):
                 diff = np.mean(np.abs(corr_i - corr_j))
                 corr_diffs.append(diff)
 
-        mean_corr_diff = float(np.mean(corr_diffs)) if corr_diffs else 0.0
+        if not corr_diffs or not numeric_cols:
+            return 0.0, False, "A estabilidade exige features numéricas e ao menos duas perturbações."
+        # A diferença absoluta entre duas correlações varia de 0 a 2.
+        score = 1.0 - float(np.mean(corr_diffs)) / 2.0
 
         # Verifica se os outliers foram tratados na tentativa corrente
-        has_extreme_outliers = False
         for col in ["Balance", "EstimatedSalary"]:
             if col in self.processed_data.columns:
                 q99 = self.processed_data[col].quantile(0.99)
                 max_val = self.processed_data[col].max()
                 if max_val > q99 * 2.0:
-                    has_extreme_outliers = True
-                    break
+                    return score, False, f"Outlier em {col}: máximo superior ao dobro do percentil 99."
 
-        # A primeira tentativa sem tratamento de outliers gera score instável
-        if self.attempt_counter <= 1 or has_extreme_outliers:
-            score = round(max(0.45, 0.65 - mean_corr_diff * 1.5), 2)
-            if score >= limiar:
-                score = 0.58
-            passed = False
-            details = f"Score {score:.2f} < Limiar {limiar}. Alta sensibilidade e dispersão por presença de outliers não tratados e imputação ingênua."
-        else:
-            score = round(min(0.96, 0.90 - mean_corr_diff * 0.5), 2)
-            if score < limiar:
-                score = 0.88
-            passed = True
-            details = f"Score {score:.2f} >= Limiar {limiar}. Estabilidade PCS confirmada nas perturbações bootstrap."
-
-        return score, passed, details
+        return score, score >= limiar, f"Estabilidade bootstrap {score:.4f}, limiar {limiar:.4f}."
 
     def obter_matriz_features_aprovadas(self, agt: str) -> Dict[str, Any]:
         """Retorna metadados da matriz de features aprovada para o ModelAgent."""
@@ -346,9 +333,12 @@ class DataScienceEnv(Environment):
         lr_metrics = predictions_data["logistic_regression"]
 
         # Predictability: desempenho preditivo verificado
-        best_acc = max(rf_metrics["accuracy"], lr_metrics["accuracy"])
-        best_f1 = max(rf_metrics["f1_score"], lr_metrics["f1_score"])
-        best_model_name = "RandomForest" if rf_metrics["accuracy"] >= lr_metrics["accuracy"] else "LogisticRegression"
+        best_model_name, best_metrics = max(
+            [("RandomForest", rf_metrics), ("LogisticRegression", lr_metrics)],
+            key=lambda item: item[1]["accuracy"],
+        )
+        best_acc = best_metrics["accuracy"]
+        best_f1 = best_metrics["f1_score"]
 
         # Computability: convergência dos algoritmos e viabilidade computacional
         computability_passed = predictions_data["elapsed_time_seconds"] < 30.0
