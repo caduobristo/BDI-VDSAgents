@@ -20,8 +20,6 @@ class ExploreAgent(Agent):
 
     @pl(gain, Goal("dados_pre_processados_adequadamente"))
     def plano_limpeza_padrao(self, src: str) -> None:
-        # Carrega dados e verifica nulidades para atualizar a base de crenças
-        self.carregar_dataset()
         info_nulidades = self.verificar_nulidades()
         self.add(Belief("nulidade_variaveis", 1 if info_nulidades["has_nulls"] else 0))
 
@@ -50,6 +48,10 @@ class ExploreAgent(Agent):
 
         print("[ExploreAgent]: Plano B finalizado. Reenviando dados pré-processados para auditoria PCS...")
         self.send("PCSAgent", achieve, Goal("auditar_dados_pre_processados", res))
+
+    @pl(gain, Belief("pre_processamento_reprovado", MaspyAny))
+    def encerrar_por_reprovacao(self, src: str, motivo: str) -> None:
+        self.stop_cycle()
 
     @pl(gain, Belief("estabilidade_pcs_aprovada", MaspyAny))
     def plano_liberacao_features(self, src: str, status: Any) -> None:
