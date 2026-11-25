@@ -35,3 +35,14 @@ bootstrap. A estabilidade é 1 menos a metade da diferença absoluta média entr
 as matrizes de correlação. O limiar padrão é 0,75. Para Bank Churn, um máximo
 superior ao dobro do percentil 99 em `Balance` ou `EstimatedSalary` também
 reprova o pré-processamento.
+
+### Verificação da integração
+
+A execução padrão usa falhas simuladas no treino para exercitar a contingência.
+Use `python main.py --sem-simulacao` para executar com a amostra original.
+O parâmetro `--limiar-estabilidade` controla a auditoria de limpeza. Com o
+valor 1 e a amostra padrão, as duas tentativas são reprovadas e o programa
+encerra com código 1 e o motivo informado pelo PCS.
+
+Execute `python -m unittest discover -s tests -v` para verificar as partições,
+a aprovação direta, a recuperação pelo Plano B e o encerramento por reprovação.

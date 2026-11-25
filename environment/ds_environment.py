@@ -17,8 +17,9 @@ from tools.unit_test import run_data_cleaning_tests
 class DataScienceEnv(Environment):
     """Ambiente MASPY para manipulação de datasets, perturbações e auditoria PCS."""
 
-    def __init__(self, env_name: Optional[str] = "DataScienceEnv"):
+    def __init__(self, env_name: Optional[str] = "DataScienceEnv", simular_falhas: bool = True):
         super().__init__(env_name)
+        self.simular_falhas = simular_falhas
         self.raw_test: Optional[pd.DataFrame] = None
         self.preprocessador = None
         self.raw_data: Optional[pd.DataFrame] = None
@@ -45,7 +46,7 @@ class DataScienceEnv(Environment):
         df = df.copy()
         null_counts = df.isnull().sum()
         # Injeta nulos e outliers controlados na amostra em memória se o dataset original for 100% preenchido
-        if null_counts.sum() == 0 and "Age" in df.columns:
+        if self.simular_falhas and null_counts.sum() == 0 and "Age" in df.columns:
             rng = np.random.default_rng(42)
             for col in ["Age", "Balance", "EstimatedSalary"]:
                 if col in df.columns:

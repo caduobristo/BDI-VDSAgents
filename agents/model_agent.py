@@ -7,10 +7,13 @@ class ModelAgent(Agent):
     """Agente BDI que treina hipóteses concorrentes e consolida predições após validação PCS."""
 
     def __init__(self, name: Optional[str] = "ModelAgent"):
-        super().__init__(name=name)
+        # As duas mensagens de liberação podem chegar no mesmo ciclo.
+        super().__init__(name=name, max_intentions=1)
         self.autorizacao_recebida: bool = False
         self.features_recebidas: bool = False
-        self.modelagem_concluida: bool = False
+        self.modelagem_iniciada = False
+        self.certificado_final = None
+        self.motivo_reprovacao = None
 
     @pl(gain, Goal("autorizacao_para_modelagem", MaspyAny))
     def ao_receber_autorizacao(self, src: str, payload: Any) -> None:
@@ -26,8 +29,8 @@ class ModelAgent(Agent):
 
     def verificar_e_executar_modelagem(self) -> None:
         # Só inicia o treino quando possui autorização para modelagem E matriz de features aprovadas
-        if self.autorizacao_recebida and self.features_recebidas and not self.modelagem_concluida:
-            self.modelagem_concluida = True
+        if self.autorizacao_recebida and self.features_recebidas and not self.modelagem_iniciada:
+            self.modelagem_iniciada = True
             self.executar_modelagem_concorrente()
 
     def executar_modelagem_concorrente(self) -> None:
@@ -48,6 +51,7 @@ class ModelAgent(Agent):
 
     @pl(gain, Belief("pre_processamento_reprovado", MaspyAny))
     def encerrar_por_reprovacao(self, src: str, motivo: str) -> None:
+        self.motivo_reprovacao = motivo
         self.stop_cycle()
 
     @pl(gain, Belief("certificacao_pcs_emitida", MaspyAny))
@@ -62,5 +66,5 @@ class ModelAgent(Agent):
         print(f"S - Estabilidade (Bootstrap): {certificate['stability']['mean_perturbation_stability']:.4f}")
         print("=" * 75)
         print("[ModelAgent]: Ciclo deliberativo concluído com sucesso. Entregando resultados.")
-
+        self.certificado_final = certificate
         self.stop_cycle()
