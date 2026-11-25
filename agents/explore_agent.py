@@ -20,8 +20,6 @@ class ExploreAgent(Agent):
 
     @pl(gain, Goal("dados_pre_processados_adequadamente"))
     def plano_limpeza_padrao(self, src: str) -> None:
-        # Carrega dados e verifica nulidades para atualizar a base de crenças
-        self.carregar_dataset()
         info_nulidades = self.verificar_nulidades()
         self.add(Belief("nulidade_variaveis", 1 if info_nulidades["has_nulls"] else 0))
 

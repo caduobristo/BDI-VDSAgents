@@ -1,19 +1,39 @@
 """Ponto de entrada principal para execução do sistema deliberativo VDS-BDI em MASPY."""
 import argparse
+from pathlib import Path
 
 from maspy import Admin
-from environment.ds_environment import DataScienceEnv
+from environment.ds_environment import BANK_CHURN, DataScienceEnv
 from agents.explore_agent import ExploreAgent
 from agents.pcs_agent import PCSAgent
 from agents.model_agent import ModelAgent
 
 
-def main(*, simular_falhas: bool = True, limiar_estabilidade: float = 0.75):
+def main(
+    *, simular_falhas: bool = True, limiar_estabilidade: float = 0.75,
+    dataset: str = BANK_CHURN, alvo: str | None = None,
+    tarefa: str = "classificacao", ignorar: list[str] | None = None,
+    tamanho_amostra: int = 1000, separador: str = ",",
+):
     if not 0 <= limiar_estabilidade <= 1:
         raise SystemExit("O limiar de estabilidade deve estar entre 0 e 1.")
+    if alvo is None:
+        if Path(dataset).resolve() != Path(BANK_CHURN).resolve():
+            raise SystemExit("Informe a coluna alvo com --alvo ao usar outro dataset.")
+        alvo = "Exited"
+
+    env = DataScienceEnv(
+        "DataScienceEnv", simular_falhas=simular_falhas,
+        alvo=alvo, tarefa=tarefa, ignorar=ignorar,
+    )
+    try:
+        env.carregar_dataset("main", path=dataset, sample_size=tamanho_amostra, separador=separador)
+    except (OSError, ValueError) as erro:
+        raise SystemExit(f"Não foi possível carregar o dataset: {erro}") from erro
+
     print("=" * 75)
     print(" SISTEMA MULTIAGENTE DELIBERATIVO VDS-BDI (Predictability, Computability, Stability)")
-    print(" Framework: MASPY | Domínio: Bank Churn (Data Science Life Cycle)")
+    print(f" MASPY | Dataset: {dataset} | Alvo: {alvo} | Tarefa: {tarefa}")
     print("=" * 75)
 
     admin = Admin()
@@ -25,7 +45,6 @@ def main(*, simular_falhas: bool = True, limiar_estabilidade: float = 0.75):
         show_slct=False,
     )
 
-    env = DataScienceEnv("DataScienceEnv", simular_falhas=simular_falhas)
     explore = ExploreAgent("ExploreAgent")
     pcs = PCSAgent("PCSAgent", limiar_estabilidade=limiar_estabilidade)
     model = ModelAgent("ModelAgent")
@@ -46,7 +65,12 @@ def main(*, simular_falhas: bool = True, limiar_estabilidade: float = 0.75):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sem-simulacao", action="store_true", help="Usa os dados sem injetar nulos e outliers.")
+    parser.add_argument("--dataset", default=BANK_CHURN, help="Caminho do CSV com dados rotulados.")
+    parser.add_argument("--alvo", help="Coluna a prever. Obrigatória para CSVs personalizados.")
+    parser.add_argument("--tarefa", choices=("classificacao", "regressao"), default="classificacao")
+    parser.add_argument("--ignorar", action="append", help="Coluna de entrada a excluir. Pode ser repetido.")
+    parser.add_argument("--tamanho-amostra", type=int, default=1000, help="Limite de linhas. Use 0 para ler todas.")
+    parser.add_argument("--separador", default=",", help="Separador de campos do CSV.")
+    parser.add_argument("--sem-simulacao", action="store_false", dest="simular_falhas", help="Desativa a simulação de falhas de Bank Churn.")
     parser.add_argument("--limiar-estabilidade", type=float, default=0.75, help="Limiar da auditoria de limpeza (0 a 1).")
-    args = parser.parse_args()
-    main(simular_falhas=not args.sem_simulacao, limiar_estabilidade=args.limiar_estabilidade)
+    main(**vars(parser.parse_args()))

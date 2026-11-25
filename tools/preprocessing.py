@@ -35,12 +35,16 @@ class RobustNumericImputer(TransformerMixin, BaseEstimator):
 def criar_preprocessador(features: pd.DataFrame, robusto: bool) -> ColumnTransformer:
     numericas = features.select_dtypes(include="number").columns.tolist()
     categoricas = [col for col in features if col not in numericas]
+    remover_referencia = bool(numericas) or any(features[col].nunique() > 1 for col in categoricas)
     numeric = RobustNumericImputer() if robusto else SimpleImputer(
         strategy="mean", keep_empty_features=True
     )
     categorical = make_pipeline(
         SimpleImputer(strategy="most_frequent", keep_empty_features=True),
-        OneHotEncoder(drop="first", handle_unknown="ignore", sparse_output=False),
+        OneHotEncoder(
+            drop="first" if remover_referencia else None,
+            handle_unknown="ignore", sparse_output=False,
+        ),
     )
     return ColumnTransformer(
         [("numericas", numeric, numericas), ("categoricas", categorical, categoricas)],

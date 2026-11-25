@@ -1,6 +1,7 @@
 """Agente BDI responsável pela auditoria e certificação dos princípios PCS."""
 from typing import Any, Optional
 from maspy import Agent, Belief, Goal, achieve, gain, pl, tell, Any as MaspyAny
+from tools.modeling import formatar_metricas
 
 
 class PCSAgent(Agent):
@@ -47,7 +48,8 @@ class PCSAgent(Agent):
         certificate = self.auditar_predicoes_pcs(predictions_data)
 
         print(f"[PCSAgent]: Emitindo Certificado PCS - Status: {certificate['status']}")
-        print(f"  • Predictability: Acurácia={certificate['predictability']['accuracy']:.4f}, F1={certificate['predictability']['f1_score']:.4f} (Validado: {certificate['predictability']['verified']})")
+        metricas = {chave: valor for chave, valor in certificate["predictability"].items() if chave != "verified"}
+        print(f"  • Predictability: {formatar_metricas(metricas)} (Validado: {certificate['predictability']['verified']})")
         print(f"  • Computability: Tempo={certificate['computability']['execution_time_seconds']}s (Validado: {certificate['computability']['verified']})")
         print(f"  • Stability: Estabilidade Bootstrap={certificate['stability']['mean_perturbation_stability']:.4f}, Concordância={certificate['stability']['inter_model_agreement']:.4f} (Validado: {certificate['stability']['verified']})")
 

@@ -44,3 +44,25 @@ class FluxoAgentesTest(unittest.TestCase):
         self.assertEqual(resultado.stdout.count("REJEITADO."), 2)
         self.assertNotIn("Iniciando treinamento", resultado.stdout)
         self.assertNotIn("Status da Certificação PCS:", resultado.stdout)
+
+    def test_datasets_personalizados(self):
+        casos = [
+            (["--dataset", "data/online_shopping/train.csv", "--alvo", "Revenue"], "F1="),
+            (["--dataset", "data/obesity_risks/train.csv", "--alvo", "NObeyesdad"], "F1="),
+            (
+                ["--dataset", "data/ames_houses/train.csv", "--alvo", "SalePrice",
+                 "--tarefa", "regressao", "--ignorar", "Order"],
+                "R²=",
+            ),
+        ]
+        for args, metrica in casos:
+            with self.subTest(dataset=args[1]):
+                resultado = self.executar(*args)
+                self.verificar_entrega(resultado)
+                self.assertIn(metrica, resultado.stdout)
+
+    def test_alvo_ausente_no_csv(self):
+        resultado = self.executar("--dataset", "data/online_shopping/train.csv", "--alvo", "Inexistente")
+        self.assertEqual(resultado.returncode, 1)
+        self.assertIn("Coluna alvo 'Inexistente' ausente no CSV", resultado.stderr)
+        self.assertNotIn("[ExploreAgent]", resultado.stdout)

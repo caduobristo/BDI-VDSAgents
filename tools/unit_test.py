@@ -238,6 +238,8 @@ def run_data_cleaning_tests(
     data_or_path: Union[str, pd.DataFrame],
     original_data_or_path: Optional[Union[str, pd.DataFrame]] = None,
     require_all_numeric: bool = False,
+    *,
+    linhas_para_duplicatas: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
     """Executa a bateria de testes de limpeza e retorna relatório estruturado."""
     tests = [
@@ -245,7 +247,9 @@ def run_data_cleaning_tests(
         DataCleaningTest.test_empty_dataset(data_or_path),
         DataCleaningTest.test_missing_values(data_or_path),
         DataCleaningTest.test_duplicated_features(data_or_path),
-        DataCleaningTest.test_duplicated_rows(data_or_path),
+        DataCleaningTest.test_duplicated_rows(
+            data_or_path if linhas_para_duplicatas is None else linhas_para_duplicatas
+        ),
     ]
 
     if original_data_or_path is not None:

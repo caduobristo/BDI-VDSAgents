@@ -1,6 +1,7 @@
 """Agente BDI responsável pela construção, inferência e validação de modelos concorrentes."""
 from typing import Any, Optional
 from maspy import Agent, Belief, Goal, achieve, gain, pl, tell, Any as MaspyAny
+from tools.modeling import formatar_metricas
 
 
 class ModelAgent(Agent):
@@ -35,15 +36,14 @@ class ModelAgent(Agent):
 
     def executar_modelagem_concorrente(self) -> None:
         print("\n[ModelAgent]: Condições BDI satisfeitas (Autorização PCS + Features Aprovadas).")
-        print("[ModelAgent]: Iniciando treinamento de hipóteses concorrentes (RandomForest vs LogisticRegression)...")
+        print("[ModelAgent]: Iniciando treinamento de hipóteses concorrentes...")
 
         predictions_data = self.treinar_e_avaliar_hipoteses()
 
-        rf = predictions_data["random_forest"]
-        lr = predictions_data["logistic_regression"]
-        print(f"[ModelAgent]: Treinamento finalizado em {predictions_data['elapsed_time_seconds']}s.")
-        print(f"  • Random Forest: Acurácia={rf['accuracy']:.4f}, F1={rf['f1_score']:.4f}, Estabilidade={rf['perturbation_stability']:.4f}")
-        print(f"  • Logistic Regression: Acurácia={lr['accuracy']:.4f}, F1={lr['f1_score']:.4f}, Estabilidade={lr['perturbation_stability']:.4f}")
+        print(f"[ModelAgent]: Treinamento finalizado em {predictions_data['elapsed_time_seconds']:.3f}s.")
+        for nome, resultado in predictions_data["models"].items():
+            metricas = formatar_metricas(resultado["metricas"])
+            print(f"  {nome}: {metricas}, estabilidade={resultado['perturbation_stability']:.4f}")
         print(f"  • Concordância entre Hipóteses: {predictions_data['inter_model_agreement']:.4f}")
 
         print("[ModelAgent]: Submetendo predições perturbadas para auditoria final do PCSAgent...")
@@ -61,7 +61,8 @@ class ModelAgent(Agent):
         print("=" * 75)
         print(f"Status da Certificação PCS: {certificate['status']}")
         print(f"Melhor Hipótese Selecionada: {certificate['best_hypothesis']}")
-        print(f"P - Previsibilidade (Acurácia / F1): {certificate['predictability']['accuracy']:.4f} / {certificate['predictability']['f1_score']:.4f}")
+        metricas = {chave: valor for chave, valor in certificate["predictability"].items() if chave != "verified"}
+        print(f"P - Previsibilidade: {formatar_metricas(metricas)}")
         print(f"C - Computabilidade (Tempo de Execução): {certificate['computability']['execution_time_seconds']}s")
         print(f"S - Estabilidade (Bootstrap): {certificate['stability']['mean_perturbation_stability']:.4f}")
         print("=" * 75)
