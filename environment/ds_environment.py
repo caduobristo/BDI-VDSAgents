@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from tools.modeling import avaliar_modelos
+from tools.modeling import METRICAS_SELECAO, avaliar_modelos
 from tools.preprocessing import criar_preprocessador
 from tools.unit_test import run_data_cleaning_tests
 
@@ -35,6 +35,7 @@ class DataScienceEnv(Environment):
         self.attempt_counter: int = 0
         self.target_column = alvo
         self.tarefa = tarefa
+        self.metrica_principal = METRICAS_SELECAO[tarefa][0]
         self.identifier_columns = ignorar
         self._colunas_ignoradas: List[str] = []
         self._bank_churn = False
@@ -45,6 +46,7 @@ class DataScienceEnv(Environment):
         path: str = BANK_CHURN,
         sample_size: int = 1000,
         separador: str = ",",
+        metrica: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Carrega e armazena os dados brutos no ambiente."""
         if sample_size < 0:
@@ -54,6 +56,13 @@ class DataScienceEnv(Environment):
         if alvo not in df.columns:
             raise ValueError(f"Coluna alvo '{alvo}' ausente no CSV: {', '.join(df.columns)}.")
         bank_churn = Path(path).resolve() == Path(BANK_CHURN).resolve() and alvo == "Exited"
+        opcoes = METRICAS_SELECAO[self.tarefa]
+        if metrica is None:
+            metrica = "roc_auc" if bank_churn and self.tarefa == "classificacao" else opcoes[0]
+        if metrica not in opcoes:
+            raise ValueError(f"Métrica '{metrica}' incompatível com {self.tarefa}. Use {', '.join(opcoes)}.")
+        if metrica == "roc_auc" and df[alvo].nunique() != 2:
+            raise ValueError("ROC AUC requer um alvo de classificação binária.")
         ignoradas = list(self.identifier_columns or [])
         if self.identifier_columns is None:
             ignoradas = ["id", "CustomerId", "Surname"] if bank_churn else [
@@ -84,6 +93,8 @@ class DataScienceEnv(Environment):
         )
         if classe is not None and df[alvo].nunique() != classe.nunique():
             raise ValueError("A amostra de treino deve conter todas as classes do alvo.")
+        if metrica == "roc_auc" and test[alvo].nunique() != 2:
+            raise ValueError("ROC AUC requer as duas classes na validação interna. Use uma amostra maior.")
         df = df.copy()
         null_counts = df.isnull().sum()
         if bank_churn and self.simular_falhas and null_counts.sum() == 0:
@@ -100,6 +111,7 @@ class DataScienceEnv(Environment):
         self.raw_data = df
         self.raw_test = test
         self._bank_churn = bank_churn
+        self.metrica_principal = metrica
         self._colunas_ignoradas = ignoradas
         self.processed_data = None
         self.preprocessador = None
@@ -259,6 +271,7 @@ class DataScienceEnv(Environment):
             self.raw_test[alvo],
             self.perturbed_datasets,
             alvo,
+            metrica_principal=self.metrica_principal,
         )
 
     def auditar_predicoes_pcs(self, agt: str, predictions_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -267,7 +280,8 @@ class DataScienceEnv(Environment):
         criterio = predictions_data["primary_metric"]
         melhor, resultado = max(modelos.items(), key=lambda item: item[1]["metricas"][criterio])
         metricas = resultado["metricas"]
-        previsibilidade_aprovada = metricas[criterio] > (0.70 if criterio == "accuracy" else 0.0)
+        limiares = {"accuracy": 0.70, "roc_auc": 0.50, "r2": 0.0}
+        previsibilidade_aprovada = metricas[criterio] > limiares[criterio]
 
         computability_passed = predictions_data["elapsed_time_seconds"] < 30.0
 
@@ -279,6 +293,8 @@ class DataScienceEnv(Environment):
         certificate = {
             "status": "CERTIFICADO" if certified else "REPROVADO",
             "best_hypothesis": melhor,
+            "primary_metric": criterio,
+            "validation_scores": {nome: dados["metricas"][criterio] for nome, dados in modelos.items()},
             "predictability": {
                 **metricas,
                 "verified": previsibilidade_aprovada,

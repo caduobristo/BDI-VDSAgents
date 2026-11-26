@@ -8,6 +8,7 @@ from agents.explore_agent import ExploreAgent
 from agents.pcs_agent import PCSAgent
 from agents.model_agent import ModelAgent
 from tools.avaliacao_externa import avaliar_bank_churn
+from tools.modeling import METRICAS_SELECAO, NOMES_METRICAS
 
 
 def main(
@@ -16,7 +17,7 @@ def main(
     tarefa: str = "classificacao", ignorar: list[str] | None = None,
     tamanho_amostra: int = 1000, separador: str = ",",
     avaliacao_externa: bool = False, rotulos_externos: Path | None = None,
-    saida_externa: Path | None = None,
+    saida_externa: Path | None = None, metrica: str | None = None,
 ):
     if not 0 <= limiar_estabilidade <= 1:
         raise SystemExit("O limiar de estabilidade deve estar entre 0 e 1.")
@@ -38,13 +39,14 @@ def main(
         alvo=alvo, tarefa=tarefa, ignorar=ignorar,
     )
     try:
-        env.carregar_dataset("main", path=dataset, sample_size=tamanho_amostra, separador=separador)
+        env.carregar_dataset("main", path=dataset, sample_size=tamanho_amostra, separador=separador, metrica=metrica)
     except (OSError, ValueError) as erro:
         raise SystemExit(f"Não foi possível carregar o dataset: {erro}") from erro
 
     print("=" * 75)
     print(" SISTEMA MULTIAGENTE DELIBERATIVO VDS-BDI (Predictability, Computability, Stability)")
     print(f" MASPY | Dataset: {dataset} | Alvo: {alvo} | Tarefa: {tarefa}")
+    print(f" Métrica de seleção na validação interna: {NOMES_METRICAS[env.metrica_principal]}")
     print("=" * 75)
 
     admin = Admin()
@@ -90,6 +92,8 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default=BANK_CHURN, help="Caminho do CSV com dados rotulados.")
     parser.add_argument("--alvo", help="Coluna a prever. Obrigatória para CSVs personalizados.")
     parser.add_argument("--tarefa", choices=("classificacao", "regressao"), default="classificacao")
+    parser.add_argument("--metrica", choices=[m for opcoes in METRICAS_SELECAO.values() for m in opcoes],
+                        help="Métrica de seleção interna. Padrões: roc_auc para Bank Churn, accuracy para outras classificações e r2 para regressão.")
     parser.add_argument("--ignorar", action="append", help="Coluna de entrada a excluir. Pode ser repetido.")
     parser.add_argument("--tamanho-amostra", type=int, default=1000, help="Limite de linhas. Use 0 para ler todas.")
     parser.add_argument("--separador", default=",", help="Separador de campos do CSV.")

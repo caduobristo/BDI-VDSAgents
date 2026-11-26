@@ -26,6 +26,10 @@ python main.py --dataset data/ames_houses/train.csv --alvo SalePrice --tarefa re
   ou os identificadores configurados no exemplo de Bank Churn.
 - `--tamanho-amostra` limita a entrada a 1.000 linhas por padrão. Use `0`
   para processar todo o CSV. `--separador` aceita outro delimitador, como `";"`.
+- `--metrica` define a métrica de seleção antes do treino. Use `roc_auc` para
+  classificação binária, `accuracy` para classificação ou `r2` para regressão.
+  Bank Churn usa `roc_auc` por padrão. As demais classificações usam `accuracy`
+  e as regressões usam `r2`.
 - Em CSVs personalizados, o ambiente remove apenas linhas de origem
   inteiramente iguais antes da divisão. Identificadores distintos preservam
   observações que aparentam ser iguais depois do pré-processamento.
@@ -82,11 +86,14 @@ a aprovação direta, a recuperação pelo Plano B e o encerramento por reprova�
 ### Avaliação externa de Bank Churn
 
 ```powershell
-py -3.12 -X utf8 main.py --sem-simulacao --avaliacao-externa
+py -3.12 -X utf8 main.py --sem-simulacao --metrica roc_auc --avaliacao-externa
 ```
 
 Os agentes usam somente `train.csv` para aprovar o plano de limpeza e
-selecionar o modelo por acurácia na validação interna. A amostra padrão
+selecionar o modelo de maior ROC AUC na validação interna. A métrica usa as
+probabilidades de `Exited = 1` calculadas por cada candidato. Para esse
+critério, o PCS exige ROC AUC superior a 0,5, referência de ordenação
+aleatória. Para repetir a seleção anterior, use `--metrica accuracy`. A amostra padrão
 contém 750 linhas para treino e 250 para validação. A opção
 `--tamanho-amostra 0` usa o arquivo inteiro nessa seleção.
 
@@ -99,6 +106,6 @@ para um para calcular acurácia, precisão, recall, F1 e ROC AUC.
 
 Cada execução cria uma pasta em `resultados/avaliacao-externa/` com as
 predições e o `relatorio.json`. O relatório identifica o modelo, o critério
-de seleção, a acurácia de validação, o status do PCS, as quantidades de
+de seleção, a pontuação de cada candidato, a acurácia de validação do vencedor, o status do PCS, as quantidades de
 linhas e as métricas externas. Use `--saida-externa` para escolher o diretório
 e `--rotulos-externos` para indicar outro arquivo de rótulos por id.

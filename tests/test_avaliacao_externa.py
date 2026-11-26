@@ -36,12 +36,18 @@ class AvaliacaoExternaTest(unittest.TestCase):
         with TemporaryDirectory() as temp:
             pasta = Path(temp)
             original, assinatura = self.executar(pasta / "original")
+            selecao = original["selecao_interna"]
+            self.assertEqual(selecao["criterio"], "roc_auc")
+            pontuacoes = selecao["pontuacoes_por_modelo"]
+            self.assertEqual(set(pontuacoes), {"RandomForest", "LogisticRegression"})
+            self.assertEqual(original["modelo"], max(pontuacoes, key=pontuacoes.get))
+            self.assertEqual(selecao["valor"], pontuacoes[original["modelo"]])
             rotulos = pd.read_csv(RAIZ / "data/bank_churn/test_eval.csv", usecols=["id", "Exited"])
             invertidos = pasta / "rotulos_invertidos.csv"
             rotulos["Exited"] = 1 - rotulos["Exited"]
             rotulos.sample(frac=1, random_state=42).to_csv(invertidos, index=False)
             controle, outra_assinatura = self.executar(
-                pasta / "controle", "--rotulos-externos", str(invertidos)
+                pasta / "controle", "--metrica", "roc_auc", "--rotulos-externos", str(invertidos)
             )
             self.assertEqual(original["modelo"], controle["modelo"])
             self.assertEqual(original["selecao_interna"], controle["selecao_interna"])
@@ -51,6 +57,14 @@ class AvaliacaoExternaTest(unittest.TestCase):
                 self.assertAlmostEqual(
                     controle["metricas_externas"][metrica], 1 - original["metricas_externas"][metrica]
                 )
+
+    def test_selecao_explicita_por_acuracia(self):
+        with TemporaryDirectory() as temp:
+            relatorio, _ = self.executar(Path(temp), "--metrica", "accuracy")
+            selecao = relatorio["selecao_interna"]
+            self.assertEqual(selecao["criterio"], "acuracia")
+            self.assertEqual(selecao["valor"], selecao["acuracia"])
+            self.assertEqual(selecao["valor"], max(selecao["pontuacoes_por_modelo"].values()))
 
     def test_rejeita_ids_incompativeis(self):
         predicoes = pd.DataFrame({"id": [1, 2], "predicao": [0, 1], "probabilidade_churn": [0.1, 0.9]})

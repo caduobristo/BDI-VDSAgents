@@ -6,12 +6,13 @@ from time import perf_counter
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, r2_score
+from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, r2_score, roc_auc_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 
-NOMES_METRICAS = {"accuracy": "Acurácia", "f1_score": "F1", "mae": "MAE", "r2": "R²"}
+NOMES_METRICAS = {"accuracy": "Acurácia", "roc_auc": "ROC AUC", "f1_score": "F1", "mae": "MAE", "r2": "R²"}
+METRICAS_SELECAO = {"classificacao": ("accuracy", "roc_auc"), "regressao": ("r2",)}
 
 
 def formatar_metricas(metricas):
@@ -31,13 +32,13 @@ def criar_hipoteses(tarefa):
     }
 
 
-def avaliar_modelos(tarefa, X_treino, y_treino, X_teste, y_teste, perturbacoes, alvo):
+def avaliar_modelos(tarefa, X_treino, y_treino, X_teste, y_teste, perturbacoes, alvo, metrica_principal=None):
     regressao = tarefa == "regressao"
+    if metrica_principal is None:
+        metrica_principal = METRICAS_SELECAO[tarefa][0]
     if regressao:
-        metrica_principal = "r2"
         escala = float(np.mean(np.abs(y_treino - y_treino.mean()))) or 1.0
     else:
-        metrica_principal = "accuracy"
         media_f1 = "binary" if set(y_treino.unique()) == {0, 1} else "macro"
         rotulos = LabelEncoder().fit(y_treino)
         y_treino = rotulos.transform(y_treino)
@@ -61,6 +62,9 @@ def avaliar_modelos(tarefa, X_treino, y_treino, X_teste, y_teste, perturbacoes, 
                 "accuracy": accuracy_score(y_teste, pred),
                 "f1_score": f1_score(y_teste, pred, average=media_f1, zero_division=0),
             }
+            if metrica_principal == "roc_auc":
+                prob_positiva = modelo.predict_proba(X_teste)[:, 1]
+                metricas["roc_auc"] = roc_auc_score(y_teste, prob_positiva)
 
         predicoes_bootstrap = [
             modelo.fit(

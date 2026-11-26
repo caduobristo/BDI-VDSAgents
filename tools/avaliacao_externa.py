@@ -66,6 +66,7 @@ def pontuar_bank_churn(predicoes, arquivo_rotulos):
 def avaliar_bank_churn(arquivo_treino, preprocessador, certificado, arquivo_rotulos, destino,
                       n_treino_interno, n_validacao):
     nome = certificado["best_hypothesis"]
+    criterio = certificado["primary_metric"]
     print(f"[Avaliação externa] Hipótese fixada pela validação interna: {nome}.")
     treino = pd.read_csv(arquivo_treino)
     teste = pd.read_csv(arquivo_treino.with_name("test.csv"))
@@ -79,7 +80,9 @@ def avaliar_bank_churn(arquivo_treino, preprocessador, certificado, arquivo_rotu
     relatorio = {
         "modelo": nome,
         "selecao_interna": {
-            "criterio": "acuracia",
+            "criterio": "acuracia" if criterio == "accuracy" else criterio,
+            "valor": certificado["predictability"][criterio],
+            "pontuacoes_por_modelo": certificado["validation_scores"],
             "acuracia": certificado["predictability"]["accuracy"],
             "status_pcs": certificado["status"],
             "linhas_treino": n_treino_interno,

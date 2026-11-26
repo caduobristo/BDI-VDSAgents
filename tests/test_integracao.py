@@ -66,3 +66,15 @@ class FluxoAgentesTest(unittest.TestCase):
         self.assertEqual(resultado.returncode, 1)
         self.assertIn("Coluna alvo 'Inexistente' ausente no CSV", resultado.stderr)
         self.assertNotIn("[ExploreAgent]", resultado.stdout)
+
+    def test_rejeita_roc_auc_incompativel_antes_do_treino(self):
+        casos = [
+            (["--tarefa", "regressao"], "incompatível com regressao"),
+            (["--dataset", "data/obesity_risks/train.csv", "--alvo", "NObeyesdad"], "classificação binária"),
+        ]
+        for args, mensagem in casos:
+            with self.subTest(args=args):
+                resultado = self.executar("--metrica", "roc_auc", *args)
+                self.assertNotEqual(resultado.returncode, 0)
+                self.assertIn(mensagem, resultado.stderr)
+                self.assertNotIn("Iniciando treinamento", resultado.stdout)
