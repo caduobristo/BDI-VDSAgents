@@ -5,9 +5,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from maspy import Environment
 import numpy as np
 import pandas as pd
+from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.model_selection import train_test_split
 
-from tools.modeling import METRICAS_SELECAO, avaliar_modelos
+from tools.modeling import METRICAS_SELECAO, PLANO_COMPLETO, PLANO_REDUZIDO, avaliar_modelos
 from tools.preprocessing import criar_preprocessador
 from tools.unit_test import run_data_cleaning_tests
 
@@ -255,49 +256,75 @@ class DataScienceEnv(Environment):
             "n_features": len(feature_cols),
             "features": feature_cols,
             "target": self.target_column,
+            "permite_replanejamento": self._bank_churn and self.tarefa == "classificacao" and len(feature_cols) > 1,
         }
 
-    def treinar_e_avaliar_hipoteses(self, agt: str) -> Dict[str, Any]:
+    def treinar_e_avaliar_hipoteses(self, agt: str, plano: str = PLANO_COMPLETO) -> Dict[str, Any]:
         """Treina as hipóteses do tipo de tarefa e avalia as perturbações."""
         if self.processed_data is None or self.raw_test is None or self.preprocessador is None:
             raise ValueError("Dados processados indisponíveis para modelagem.")
 
         alvo = self.target_column
-        return avaliar_modelos(
-            self.tarefa,
-            self.processed_data.drop(columns=alvo),
-            self.processed_data[alvo],
-            self.preprocessador.transform(self._features(self.raw_test)),
-            self.raw_test[alvo],
-            self.perturbed_datasets,
-            alvo,
-            metrica_principal=self.metrica_principal,
+        treino = self.processed_data.drop(columns=alvo)
+        validacao = self.preprocessador.transform(self._features(self.raw_test))
+        perturbacoes = self.perturbed_datasets
+        if plano == PLANO_REDUZIDO:
+            if not self._bank_churn or self.tarefa != "classificacao" or treino.shape[1] < 2:
+                raise ValueError("O plano reduzido requer Bank Churn e ao menos duas variáveis.")
+            seletor = SelectKBest(f_classif, k=treino.shape[1] // 2).fit(treino, self.processed_data[alvo])
+            colunas = list(seletor.get_feature_names_out())
+            treino = treino[colunas]
+            validacao = validacao[colunas]
+            perturbacoes = [amostra[colunas + [alvo]] for amostra in perturbacoes]
+        elif plano != PLANO_COMPLETO:
+            raise ValueError(f"Plano de modelagem desconhecido: {plano}")
+        resultado = avaliar_modelos(
+            self.tarefa, treino, self.processed_data[alvo], validacao, self.raw_test[alvo],
+            perturbacoes, alvo, metrica_principal=self.metrica_principal,
         )
+        return {**resultado, "plano": plano, "variaveis": list(treino.columns)}
 
-    def auditar_predicoes_pcs(self, agt: str, predictions_data: Dict[str, Any]) -> Dict[str, Any]:
+    def auditar_predicoes_pcs(self, agt: str, predictions_data: Dict[str, Any],
+                              limiar_estabilidade: float = 0.80) -> Dict[str, Any]:
         """Emite o certificado final PCS com base nas métricas da tarefa."""
         modelos = predictions_data["models"]
         criterio = predictions_data["primary_metric"]
-        melhor, resultado = max(modelos.items(), key=lambda item: item[1]["metricas"][criterio])
-        metricas = resultado["metricas"]
         limiares = {"accuracy": 0.70, "roc_auc": 0.50, "r2": 0.0}
-        previsibilidade_aprovada = metricas[criterio] > limiares[criterio]
-
         computability_passed = predictions_data["elapsed_time_seconds"] < 30.0
+        auditorias = {}
+        for nome, dados in modelos.items():
+            valor = dados["metricas"][criterio]
+            estabilidade = dados["perturbation_stability"]
+            motivos = []
+            if not valor > limiares[criterio]:
+                motivos.append(f"{criterio}={valor:.4f} precisa superar {limiares[criterio]:.2f}")
+            if not estabilidade >= limiar_estabilidade:
+                motivos.append(f"estabilidade abaixo do limiar {limiar_estabilidade:g}")
+            if not computability_passed:
+                motivos.append("tempo da tentativa atingiu o limite de 30 s")
+            auditorias[nome] = {
+                "metricas": dados["metricas"], "estabilidade": estabilidade,
+                "aprovado": not motivos, "motivos": motivos,
+            }
 
+        aprovados = [nome for nome, auditoria in auditorias.items() if auditoria["aprovado"]]
+        melhor = max(aprovados, key=lambda nome: modelos[nome]["metricas"][criterio], default=None)
         mean_stability = float(np.mean([m["perturbation_stability"] for m in modelos.values()]))
-        stability_passed = mean_stability >= 0.80
-
-        certified = computability_passed and stability_passed and previsibilidade_aprovada
-
-        certificate = {
-            "status": "CERTIFICADO" if certified else "REPROVADO",
+        return {
+            "status": "CERTIFICADO" if melhor is not None else "REPROVADO",
             "best_hypothesis": melhor,
+            "auditoria": {
+                "plano": predictions_data["plano"], "variaveis": predictions_data["variaveis"],
+                "criterio": criterio, "limiar_previsibilidade": limiares[criterio],
+                "limiar_estabilidade": limiar_estabilidade, "modelos": auditorias,
+                "tempo_segundos": predictions_data["elapsed_time_seconds"],
+                "modelo_selecionado": melhor,
+            },
             "primary_metric": criterio,
             "validation_scores": {nome: dados["metricas"][criterio] for nome, dados in modelos.items()},
             "predictability": {
-                **metricas,
-                "verified": previsibilidade_aprovada,
+                **(modelos[melhor]["metricas"] if melhor is not None else {}),
+                "verified": melhor is not None,
             },
             "computability": {
                 "execution_time_seconds": round(predictions_data["elapsed_time_seconds"], 3),
@@ -305,9 +332,8 @@ class DataScienceEnv(Environment):
             },
             "stability": {
                 "mean_perturbation_stability": round(mean_stability, 4),
+                "selected_perturbation_stability": modelos[melhor]["perturbation_stability"] if melhor is not None else None,
                 "inter_model_agreement": round(predictions_data["inter_model_agreement"], 4),
-                "verified": stability_passed,
+                "verified": melhor is not None,
             },
         }
-
-        return certificate

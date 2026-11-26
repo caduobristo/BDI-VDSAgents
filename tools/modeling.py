@@ -13,6 +13,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 NOMES_METRICAS = {"accuracy": "Acurácia", "roc_auc": "ROC AUC", "f1_score": "F1", "mae": "MAE", "r2": "R²"}
 METRICAS_SELECAO = {"classificacao": ("accuracy", "roc_auc"), "regressao": ("r2",)}
+PLANO_COMPLETO = "todas_as_variaveis"
+PLANO_REDUZIDO = "selecao_de_variaveis"
 
 
 def formatar_metricas(metricas):

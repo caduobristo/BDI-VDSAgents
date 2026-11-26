@@ -65,12 +65,38 @@ decisões e metadados pelas mensagens abaixo.
 | PCS → Explore / PCS → Model | `estabilidade_pcs_aprovada` / `autorizacao_para_modelagem` | O Explore pode liberar as features e o Model recebe autorização para treinar. |
 | Explore → Model | `matriz_features_aprovadas` | Identifica as features, o alvo e as dimensões. O Model aguarda tanto essa mensagem quanto a autorização do PCS. |
 | Model → PCS / PCS → Model | `auditar_predicoes_modelos` / `certificacao_pcs_emitida` | O Model envia as métricas das duas hipóteses, o tempo e a concordância. O PCS devolve o certificado usado no relatório. |
+| PCS → Model | `replanejar_modelagem` | Em Bank Churn, a reprovação de todos os candidatos pode acionar uma segunda tentativa com menos variáveis. A mensagem inclui os motivos por candidato. |
 
 O PCS verifica o relatório de limpeza antes de avaliar as três amostras
 bootstrap. A estabilidade é 1 menos a metade da diferença absoluta média entre
 as matrizes de correlação. O limiar padrão é 0,75. Para Bank Churn, um máximo
 superior ao dobro do percentil 99 em `Balance` ou `EstimatedSalary` também
 reprova o pré-processamento.
+
+### Auditoria por modelo e replanejamento
+
+O PCS verifica a previsibilidade e a estabilidade de cada candidato e escolhe
+o de maior pontuação entre os aprovados. O tempo de modelagem da tentativa
+deve ficar abaixo de 30 segundos. Para classificação, a estabilidade individual
+é a fração média de classes preditas iguais entre pares de ajustes bootstrap
+nas mesmas linhas de validação. O corte padrão é 0,80.
+
+Em Bank Churn, quando todos falham e há pelo menos duas variáveis, o ModelAgent
+tenta mais um plano. Ele mantém a metade das variáveis pré-processadas, arredondada
+para baixo, com maior estatística F de associação com o alvo no treino interno.
+Essa lista fica fixa nos bootstraps, na validação e no reajuste externo. Os dois
+planos usam os mesmos clientes, amostras bootstrap, algoritmos e limiares.
+
+Para observar o replanejamento com dados originais e o corte experimental de 0,95, execute
+
+```powershell
+py -3.12 -X utf8 main.py --sem-simulacao --metrica roc_auc --limiar-estabilidade-modelo 0.95 --avaliacao-externa
+```
+
+Com avaliação externa habilitada, o JSON guarda cada tentativa, as variáveis,
+as métricas, os motivos de reprovação e a mensagem do PCS. Se os dois planos
+falharem, o programa grava o histórico, encerra com código 1 e preserva o teste
+externo sem leitura ou geração de predições.
 
 ### Verificação da integração
 
@@ -90,7 +116,7 @@ py -3.12 -X utf8 main.py --sem-simulacao --metrica roc_auc --avaliacao-externa
 ```
 
 Os agentes usam somente `train.csv` para aprovar o plano de limpeza e
-selecionar o modelo de maior ROC AUC na validação interna. A métrica usa as
+selecionar o modelo aprovado de maior ROC AUC na validação interna. A métrica usa as
 probabilidades de `Exited = 1` calculadas por cada candidato. Para esse
 critério, o PCS exige ROC AUC superior a 0,5, referência de ordenação
 aleatória. Para repetir a seleção anterior, use `--metrica accuracy`. A amostra padrão

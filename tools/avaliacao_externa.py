@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 
-from tools.modeling import criar_hipoteses
+from tools.modeling import PLANO_REDUZIDO, criar_hipoteses
 
 
 def validar_ids(dados, origem):
@@ -16,7 +16,7 @@ def validar_ids(dados, origem):
         raise ValueError(f"{origem} precisa de um id único e preenchido por linha.")
 
 
-def prever_bank_churn(treino, teste, preprocessador, nome_modelo):
+def prever_bank_churn(treino, teste, preprocessador, nome_modelo, variaveis=None):
     validar_ids(treino, "train.csv")
     validar_ids(teste, "test.csv")
     if "Exited" in teste:
@@ -33,9 +33,14 @@ def prever_bank_churn(treino, teste, preprocessador, nome_modelo):
 
     preparo_final = clone(preprocessador)
     X_treino = preparo_final.fit_transform(treino[colunas])
+    X_teste = preparo_final.transform(teste[colunas])
+    if variaveis is not None:
+        if set(variaveis) - set(X_treino.columns):
+            raise ValueError("O reajuste não produziu todas as variáveis certificadas.")
+        X_treino = X_treino[variaveis]
+        X_teste = X_teste[variaveis]
     modelo = criar_hipoteses("classificacao")[nome_modelo]
     modelo.fit(X_treino, treino["Exited"])
-    X_teste = preparo_final.transform(teste[colunas])
     classe_positiva = list(modelo.classes_).index(1)
     return pd.DataFrame({
         "id": teste["id"],
@@ -67,34 +72,42 @@ def avaliar_bank_churn(arquivo_treino, preprocessador, certificado, arquivo_rotu
                       n_treino_interno, n_validacao):
     nome = certificado["best_hypothesis"]
     criterio = certificado["primary_metric"]
-    print(f"[Avaliação externa] Hipótese fixada pela validação interna: {nome}.")
-    treino = pd.read_csv(arquivo_treino)
-    teste = pd.read_csv(arquivo_treino.with_name("test.csv"))
-    predicoes = prever_bank_churn(treino, teste, preprocessador, nome)
     destino.mkdir(parents=True, exist_ok=True)
     pasta = Path(mkdtemp(prefix="bank_churn-", dir=destino))
-    predicoes.to_csv(pasta / "predicoes.csv", index=False)
-    print(f"[Avaliação externa] {len(predicoes)} predições gravadas em {pasta / 'predicoes.csv'}.")
-    print(f"[Avaliação externa] Lendo rótulos de {arquivo_rotulos} para pontuação.")
-    metricas = pontuar_bank_churn(predicoes, arquivo_rotulos)
     relatorio = {
         "modelo": nome,
+        "historico_modelagem": certificado["historico_modelagem"],
+        "replanejamentos": len(certificado["historico_modelagem"]) - 1,
         "selecao_interna": {
+            "plano": certificado["auditoria"]["plano"],
             "criterio": "acuracia" if criterio == "accuracy" else criterio,
-            "valor": certificado["predictability"][criterio],
+            "valor": certificado["predictability"].get(criterio),
             "pontuacoes_por_modelo": certificado["validation_scores"],
-            "acuracia": certificado["predictability"]["accuracy"],
+            "acuracia": certificado["predictability"].get("accuracy"),
             "status_pcs": certificado["status"],
             "linhas_treino": n_treino_interno,
             "linhas_validacao": n_validacao,
         },
-        "linhas_reajuste": len(treino),
-        "linhas_teste_externo": len(teste),
-        "metricas_externas": metricas,
+        "linhas_reajuste": 0,
+        "linhas_teste_externo": 0,
+        "metricas_externas": None,
     }
+    if nome is not None and certificado["status"] == "CERTIFICADO":
+        print(f"[Avaliação externa] Hipótese fixada pela validação interna: {nome}.")
+        treino = pd.read_csv(arquivo_treino)
+        teste = pd.read_csv(arquivo_treino.with_name("test.csv"))
+        auditoria = certificado["auditoria"]
+        variaveis = auditoria["variaveis"] if auditoria["plano"] == PLANO_REDUZIDO else None
+        predicoes = prever_bank_churn(treino, teste, preprocessador, nome, variaveis)
+        predicoes.to_csv(pasta / "predicoes.csv", index=False)
+        print(f"[Avaliação externa] {len(predicoes)} predições gravadas em {pasta / 'predicoes.csv'}.")
+        print(f"[Avaliação externa] Lendo rótulos de {arquivo_rotulos} para pontuação.")
+        metricas = pontuar_bank_churn(predicoes, arquivo_rotulos)
+        relatorio.update(linhas_reajuste=len(treino), linhas_teste_externo=len(teste), metricas_externas=metricas)
+        for chave, valor in metricas.items():
+            print(f"  {chave}: {valor:.4f}")
     (pasta / "relatorio.json").write_text(
         json.dumps(relatorio, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
-    for chave, valor in metricas.items():
-        print(f"  {chave}: {valor:.4f}")
+    print(f"Histórico de modelagem gravado em {pasta / 'relatorio.json'}.")
     return relatorio

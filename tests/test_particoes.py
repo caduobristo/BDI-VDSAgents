@@ -4,9 +4,21 @@ import unittest
 import pandas as pd
 
 from environment.ds_environment import DataScienceEnv
+from tools.modeling import PLANO_REDUZIDO
 
 
 class ParticoesTest(unittest.TestCase):
+    def test_plano_reduzido_seleciona_variaveis_somente_no_treino(self):
+        env = DataScienceEnv("TesteSelecao", simular_falhas=False)
+        env.carregar_dataset("ExploreAgent")
+        env.executar_limpeza_padrao("ExploreAgent")
+        env.gerar_perturbacoes_bootstrap("PCSAgent")
+        inicial = env.treinar_e_avaliar_hipoteses("ModelAgent", PLANO_REDUZIDO)
+        env.raw_test["Age"] = 0
+        env.raw_test["Exited"] = 1 - env.raw_test["Exited"]
+        alterado = env.treinar_e_avaliar_hipoteses("ModelAgent", PLANO_REDUZIDO)
+        self.assertEqual(inicial["variaveis"], alterado["variaveis"])
+
     def test_teste_reservado_nos_dois_planos(self):
         env = DataScienceEnv("TesteParticoes")
         env.carregar_dataset("ExploreAgent")

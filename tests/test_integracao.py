@@ -1,8 +1,10 @@
 """Exercita os três agentes MASPY pelo ponto de entrada do projeto."""
+import json
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 class FluxoAgentesTest(unittest.TestCase):
@@ -66,6 +68,25 @@ class FluxoAgentesTest(unittest.TestCase):
         self.assertEqual(resultado.returncode, 1)
         self.assertIn("Coluna alvo 'Inexistente' ausente no CSV", resultado.stderr)
         self.assertNotIn("[ExploreAgent]", resultado.stdout)
+
+    def test_esgota_planos_sem_abrir_rotulos_externos(self):
+        with TemporaryDirectory() as temp:
+            pasta = Path(temp)
+            resultado = self.executar("--sem-simulacao", "--limiar-estabilidade-modelo", "1",
+                                      "--avaliacao-externa", "--saida-externa", temp,
+                                      "--rotulos-externos", str(pasta / "rotulos_inexistentes.csv"))
+            self.assertEqual(resultado.returncode, 1, resultado.stdout + resultado.stderr)
+            self.assertIn("Modelagem reprovada", resultado.stderr)
+            self.assertEqual(resultado.stdout.count("Troca de plano:"), 1)
+            self.assertEqual(resultado.stdout.count("Iniciando treinamento de hipóteses"), 2)
+            self.assertNotIn("Lendo rótulos", resultado.stdout)
+            ensaio, = pasta.iterdir()
+            self.assertFalse((ensaio / "predicoes.csv").exists())
+            relatorio = json.loads((ensaio / "relatorio.json").read_text(encoding="utf8"))
+            self.assertIsNone(relatorio["modelo"])
+            self.assertIsNone(relatorio["metricas_externas"])
+            self.assertEqual(relatorio["linhas_reajuste"], 0)
+            self.assertEqual(len(relatorio["historico_modelagem"]), 2)
 
     def test_rejeita_roc_auc_incompativel_antes_do_treino(self):
         casos = [

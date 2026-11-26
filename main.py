@@ -18,9 +18,12 @@ def main(
     tamanho_amostra: int = 1000, separador: str = ",",
     avaliacao_externa: bool = False, rotulos_externos: Path | None = None,
     saida_externa: Path | None = None, metrica: str | None = None,
+    limiar_estabilidade_modelo: float = 0.80,
 ):
     if not 0 <= limiar_estabilidade <= 1:
         raise SystemExit("O limiar de estabilidade deve estar entre 0 e 1.")
+    if not 0 <= limiar_estabilidade_modelo <= 1:
+        raise SystemExit("O limiar de estabilidade do modelo deve estar entre 0 e 1.")
     if alvo is None:
         if Path(dataset).resolve() != Path(BANK_CHURN).resolve():
             raise SystemExit("Informe a coluna alvo com --alvo ao usar outro dataset.")
@@ -47,6 +50,7 @@ def main(
     print(" SISTEMA MULTIAGENTE DELIBERATIVO VDS-BDI (Predictability, Computability, Stability)")
     print(f" MASPY | Dataset: {dataset} | Alvo: {alvo} | Tarefa: {tarefa}")
     print(f" Métrica de seleção na validação interna: {NOMES_METRICAS[env.metrica_principal]}")
+    print(f" Estabilidade mínima por modelo: {limiar_estabilidade_modelo:g}")
     print("=" * 75)
 
     admin = Admin()
@@ -59,7 +63,8 @@ def main(
     )
 
     explore = ExploreAgent("ExploreAgent")
-    pcs = PCSAgent("PCSAgent", limiar_estabilidade=limiar_estabilidade)
+    pcs = PCSAgent("PCSAgent", limiar_estabilidade=limiar_estabilidade,
+                   limiar_estabilidade_modelo=limiar_estabilidade_modelo)
     model = ModelAgent("ModelAgent")
 
     # Conecta os agentes BDI ao ambiente de dados
@@ -83,6 +88,8 @@ def main(
             )
         except (ValueError, OSError) as erro:
             raise SystemExit(f"Falha na avaliação externa: {erro}") from erro
+        if model.certificado_final["status"] != "CERTIFICADO":
+            raise SystemExit("Modelagem reprovada. Teste externo não utilizado.")
     print("\n[VDS-BDI]: Execução do pipeline multiagente concluída.")
     return model.certificado_final
 
@@ -99,6 +106,8 @@ if __name__ == "__main__":
     parser.add_argument("--separador", default=",", help="Separador de campos do CSV.")
     parser.add_argument("--sem-simulacao", action="store_false", dest="simular_falhas", help="Desativa a simulação de falhas de Bank Churn.")
     parser.add_argument("--limiar-estabilidade", type=float, default=0.75, help="Limiar da auditoria de limpeza (0 a 1).")
+    parser.add_argument("--limiar-estabilidade-modelo", type=float, default=0.80,
+                        help="Concordância bootstrap mínima para aprovar cada modelo (0 a 1).")
     parser.add_argument("--avaliacao-externa", action="store_true", help="Avalia o modelo escolhido no teste externo de Bank Churn.")
     parser.add_argument("--rotulos-externos", type=Path, help="CSV com id e Exited para pontuação. Padrão: test_eval.csv.")
     parser.add_argument("--saida-externa", type=Path, help="Diretório para os resultados de cada execução.")
