@@ -78,3 +78,27 @@ encerra com código 1 e o motivo informado pelo PCS.
 
 Execute `python -m unittest discover -s tests -v` para verificar as partições,
 a aprovação direta, a recuperação pelo Plano B e o encerramento por reprovação.
+
+### Avaliação externa de Bank Churn
+
+```powershell
+py -3.12 -X utf8 main.py --sem-simulacao --avaliacao-externa
+```
+
+Os agentes usam somente `train.csv` para aprovar o plano de limpeza e
+selecionar o modelo por acurácia na validação interna. A amostra padrão
+contém 750 linhas para treino e 250 para validação. A opção
+`--tamanho-amostra 0` usa o arquivo inteiro nessa seleção.
+
+Após a entrega do certificado PCS, o programa reajusta o pré-processamento
+aprovado e a hipótese vencedora com **todo** o `train.csv`. Ele prevê a
+classe e a probabilidade de `Exited = 1` para cada `id` de `test.csv` e
+grava `predicoes.csv`. Só então lê `id` e `Exited` de `test_eval.csv`.
+O avaliador alinha os rótulos por `id` e exige uma correspondência de um
+para um para calcular acurácia, precisão, recall, F1 e ROC AUC.
+
+Cada execução cria uma pasta em `resultados/avaliacao-externa/` com as
+predições e o `relatorio.json`. O relatório identifica o modelo, o critério
+de seleção, a acurácia de validação, o status do PCS, as quantidades de
+linhas e as métricas externas. Use `--saida-externa` para escolher o diretório
+e `--rotulos-externos` para indicar outro arquivo de rótulos por id.

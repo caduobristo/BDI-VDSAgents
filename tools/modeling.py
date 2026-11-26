@@ -18,16 +18,25 @@ def formatar_metricas(metricas):
     return ", ".join(f"{NOMES_METRICAS[chave]}={valor:.4f}" for chave, valor in metricas.items())
 
 
-def avaliar_modelos(tarefa, X_treino, y_treino, X_teste, y_teste, perturbacoes, alvo):
-    regressao = tarefa == "regressao"
-    if regressao:
+def criar_hipoteses(tarefa):
+    if tarefa == "regressao":
         floresta = RandomForestRegressor
         linear = Ridge()
-        metrica_principal = "r2"
-        escala = float(np.mean(np.abs(y_treino - y_treino.mean()))) or 1.0
     else:
         floresta = RandomForestClassifier
         linear = LogisticRegression(max_iter=1000, random_state=42)
+    return {
+        "RandomForest": floresta(n_estimators=50, max_depth=6, random_state=42),
+        type(linear).__name__: make_pipeline(StandardScaler(), linear),
+    }
+
+
+def avaliar_modelos(tarefa, X_treino, y_treino, X_teste, y_teste, perturbacoes, alvo):
+    regressao = tarefa == "regressao"
+    if regressao:
+        metrica_principal = "r2"
+        escala = float(np.mean(np.abs(y_treino - y_treino.mean()))) or 1.0
+    else:
         metrica_principal = "accuracy"
         media_f1 = "binary" if set(y_treino.unique()) == {0, 1} else "macro"
         rotulos = LabelEncoder().fit(y_treino)
@@ -39,14 +48,10 @@ def avaliar_modelos(tarefa, X_treino, y_treino, X_teste, y_teste, perturbacoes, 
             return float(1 / (1 + np.mean(np.abs(a - b)) / escala))
         return float(np.mean(a == b))
 
-    hipoteses = {
-        "RandomForest": floresta(n_estimators=50, max_depth=6, random_state=42),
-        type(linear).__name__: make_pipeline(StandardScaler(), linear),
-    }
     resultados = {}
     predicoes = []
     inicio = perf_counter()
-    for nome, modelo in hipoteses.items():
+    for nome, modelo in criar_hipoteses(tarefa).items():
         pred = modelo.fit(X_treino, y_treino).predict(X_teste)
         predicoes.append(pred)
         if regressao:

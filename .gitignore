@@ -37,6 +37,7 @@ wheels/
 *~
 
 # Logs and runtime artifacts
+/resultados/avaliacao-externa/
 *.log
 .coverage
 htmlcov/
