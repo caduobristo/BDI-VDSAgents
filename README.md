@@ -166,3 +166,29 @@ quando as duas classes aparecem no gabarito. Em multiclasse, usa média macro.
 Em regressão, calcula RMSE, MAE e R². O NPS individual é gravado no
 `relatorio.json`. As saídas ficam em `resultados/avaliacao-externa/`, com opção
 de alterar o destino via `--saida-externa`.
+
+### Benchmark dos nove datasets
+
+```powershell
+py -3.12 -X utf8 -m tools.benchmark --max-tentativas 8
+```
+
+O executor chama `main.py --avaliacao-externa` para cada tentativa,
+com dados de treino completos, sem simulação e com as configurações padrão
+de seleção e auditoria. Cada base para ao obter cinco saídas válidas ou
+atingir o limite de tentativas. O timeout padrão é de 180 segundos por
+execução e pode ser ajustado com `--timeout`.
+
+Uma saída válida precisa de código de saída zero, NPS externo finito e um
+CSV com uma predição por registro do teste. Uma troca de plano conta dentro
+da mesma tentativa. Falhas entram no denominador de VS. ANPS é a média
+dos cinco NPS válidos, acompanhada pelo desvio-padrão populacional. CS
+é a média de VS e ANPS. Para uma base incompleta, o resumo mostra o VS
+observado e deixa ANPS, desvio-padrão e CS sem valor.
+
+A pasta `resultados/avaliacao-externa/benchmark-9-*` contém o log e os
+artefatos de cada tentativa. O arquivo `resumo.json` é atualizado ao fim
+de cada execução. As rodadas reutilizam as sementes atuais do pipeline.
+O desvio-padrão descreve a variação observada nessas repetições.
+
+[Protocolo experimental do VDSAgents](https://arxiv.org/html/2510.24339v2#S4)
