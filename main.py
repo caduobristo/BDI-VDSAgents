@@ -87,6 +87,8 @@ def main(
         try:
             model.certificado_final["avaliacao_externa"] = avaliar_externamente(
                 treino, env.preprocessador, model.certificado_final,
+                candidato=env.candidatos_avaliados.get(model.certificado_final["best_hypothesis"]),
+                colunas_entrada=env.colunas_entrada, variaveis_selecionadas=env.variaveis_selecionadas,
                 arquivo_teste=teste_externo or treino.with_name("test.csv"),
                 arquivo_rotulos=rotulos_externos or treino.with_name("test_eval.csv"),
                 destino=saida_externa or Path("resultados/avaliacao-externa"),

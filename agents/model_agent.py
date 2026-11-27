@@ -1,7 +1,16 @@
 """Agente BDI responsável pela construção, inferência e validação de modelos concorrentes."""
 from typing import Any, Optional
 from maspy import Agent, Belief, Goal, achieve, gain, pl, tell, Any as MaspyAny
-from tools.modeling import PLANO_COMPLETO, PLANO_REDUZIDO, formatar_metricas
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.feature_selection import SelectKBest, f_classif, f_regression
+from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from tools.modeling import formatar_metricas
+
+
+PLANO_COMPLETO = "todas_as_variaveis"
+PLANO_REDUZIDO = "selecao_de_variaveis"
 
 
 class ModelAgent(Agent):
@@ -14,6 +23,7 @@ class ModelAgent(Agent):
         self.features_recebidas: bool = False
         self.modelagem_iniciada = False
         self.plano = PLANO_COMPLETO
+        self.tarefa = None
         self.permite_replanejamento = False
         self.certificado_final = None
         self.motivo_reprovacao = None
@@ -28,7 +38,8 @@ class ModelAgent(Agent):
     def ao_receber_matriz_features(self, src: str, features_info: Any) -> None:
         print(f"\n[ModelAgent]: Matriz de features aprovadas recebida de {src}.")
         self.features_recebidas = True
-        self.permite_replanejamento = features_info["permite_replanejamento"]
+        self.tarefa = features_info["tarefa"]
+        self.permite_replanejamento = features_info["n_features"] > 1
         self.verificar_e_executar_modelagem()
 
     def verificar_e_executar_modelagem(self) -> None:
@@ -38,10 +49,32 @@ class ModelAgent(Agent):
             print("\n[ModelAgent]: Condições BDI satisfeitas (Autorização PCS + Features Aprovadas).")
             self.executar_modelagem_concorrente()
 
+    @staticmethod
+    def criar_candidatos(tarefa):
+        if tarefa == "regressao":
+            floresta = RandomForestRegressor
+            linear = Ridge()
+        else:
+            floresta = RandomForestClassifier
+            linear = LogisticRegression(max_iter=1000, random_state=42)
+        return {
+            "RandomForest": floresta(n_estimators=50, max_depth=6, random_state=42),
+            type(linear).__name__: make_pipeline(StandardScaler(), linear),
+        }
+
+    @staticmethod
+    def selecionar_variaveis(tarefa, treino, alvo):
+        pontuar = f_regression if tarefa == "regressao" else f_classif
+        seletor = SelectKBest(pontuar, k=treino.shape[1] // 2).fit(treino, alvo)
+        return list(seletor.get_feature_names_out())
+
     def executar_modelagem_concorrente(self) -> None:
         print(f"[ModelAgent]: Iniciando treinamento de hipóteses concorrentes. Plano: {self.plano}.")
 
-        predictions_data = self.treinar_e_avaliar_hipoteses(plano=self.plano)
+        seletor = self.selecionar_variaveis if self.plano == PLANO_REDUZIDO else None
+        predictions_data = self.treinar_e_avaliar_hipoteses(
+            plano=self.plano, candidatos=self.criar_candidatos(self.tarefa), selecionar=seletor,
+        )
         predictions_data["pode_replanejar"] = self.permite_replanejamento and self.plano == PLANO_COMPLETO
         print(f"[ModelAgent] Variáveis da tentativa: {', '.join(predictions_data['variaveis'])}.")
 
@@ -49,7 +82,9 @@ class ModelAgent(Agent):
         for nome, resultado in predictions_data["models"].items():
             metricas = formatar_metricas(resultado["metricas"])
             print(f"  {nome}: {metricas}, estabilidade={resultado['perturbation_stability']:.4f}")
-        print(f"  • Concordância entre Hipóteses: {predictions_data['inter_model_agreement']:.4f}")
+        concordancia = predictions_data["inter_model_agreement"]
+        if concordancia is not None:
+            print(f"  • Concordância entre Hipóteses: {concordancia:.4f}")
 
         print("[ModelAgent]: Submetendo predições perturbadas para auditoria final do PCSAgent...")
         self.send("PCSAgent", achieve, Goal("auditar_predicoes_modelos", predictions_data))

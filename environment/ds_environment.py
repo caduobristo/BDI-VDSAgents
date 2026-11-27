@@ -4,11 +4,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from maspy import Environment
 import numpy as np
 import pandas as pd
-from sklearn.feature_selection import SelectKBest, f_classif, f_regression
+from sklearn.base import clone
 from sklearn.model_selection import train_test_split
 
-from tools.modeling import METRICAS_SELECAO, PLANO_COMPLETO, PLANO_REDUZIDO, avaliar_modelos
-from tools.preprocessing import criar_preprocessador
+from tools.modeling import METRICAS_SELECAO, avaliar_modelos
 from tools.unit_test import run_data_cleaning_tests
 
 
@@ -26,6 +25,9 @@ class DataScienceEnv(Environment):
         self.simular_falhas = simular_falhas
         self.raw_test: Optional[pd.DataFrame] = None
         self.preprocessador = None
+        self.colunas_entrada = []
+        self.candidatos_avaliados = {}
+        self.variaveis_selecionadas = None
         self.raw_data: Optional[pd.DataFrame] = None
         self.processed_data: Optional[pd.DataFrame] = None
         self.perturbed_datasets: List[pd.DataFrame] = []
@@ -102,6 +104,9 @@ class DataScienceEnv(Environment):
         self._colunas_ignoradas = ignoradas
         self.processed_data = None
         self.preprocessador = None
+        self.colunas_entrada = []
+        self.candidatos_avaliados = {}
+        self.variaveis_selecionadas = None
         self.perturbed_datasets = []
         self.attempt_counter = 0
         cols_with_nulls = null_counts[null_counts > 0].to_dict()
@@ -146,22 +151,29 @@ class DataScienceEnv(Environment):
             [np.inf, -np.inf], np.nan
         )
 
-    def _preparar_treino(self, agt: str, robusto: bool) -> Dict[str, Any]:
+    def aplicar_preparo(self, agt: str, estrategia: str, construir) -> Dict[str, Any]:
         if self.raw_data is None:
             raise ValueError("Carregue o dataset antes de executar a limpeza.")
 
         features = self._features(self.raw_data)
-        preprocessador = criar_preprocessador(features, robusto)
         self.perturbed_datasets = []
         self.attempt_counter += 1
         self.preprocessador = None
         self.processed_data = None
+        self.colunas_entrada = []
+        self.candidatos_avaliados = {}
+        self.variaveis_selecionadas = None
         try:
-            df = preprocessador.fit_transform(features)
+            preprocessador = construir(features)
+            df = preprocessador.fit_transform(features, self.raw_data[self.target_column])
+            if not isinstance(df, pd.DataFrame) or not df.index.equals(features.index) or df.shape[1] == 0:
+                raise ValueError("O preparo deve devolver um DataFrame com variáveis e preservar o índice do treino.")
+            df = df.copy()
             df.insert(len(df.columns), self.target_column, self.raw_data[self.target_column])
         except (ValueError, TypeError) as erro:
             return {
                 "attempt": self.attempt_counter,
+                "strategy": estrategia,
                 "tests_passed": False,
                 "report": f"Falha no pré-processamento: {erro}",
             }
@@ -172,24 +184,15 @@ class DataScienceEnv(Environment):
         )
 
         self.preprocessador = preprocessador
+        self.colunas_entrada = list(features.columns)
         self.processed_data = df
         return {
             "attempt": self.attempt_counter,
-            "strategy": "plano_b_contingencia_knn_iqr" if robusto else "plano_a_padrao",
+            "strategy": estrategia,
             "shape": df.shape,
             "tests_passed": test_results["all_passed"],
             "report": test_results["report"],
         }
-
-    def executar_limpeza_padrao(self, agt: str) -> Dict[str, Any]:
-        return self._preparar_treino(agt, robusto=False)
-
-    executar_limpeza_padrao_env = executar_limpeza_padrao
-
-    def executar_limpeza_robusta(self, agt: str) -> Dict[str, Any]:
-        return self._preparar_treino(agt, robusto=True)
-
-    executar_limpeza_robusta_env = executar_limpeza_robusta
 
     def gerar_perturbacoes_bootstrap(
         self,
@@ -220,28 +223,25 @@ class DataScienceEnv(Environment):
 
         return [{"index": i + 1, "shape": d.shape} for i, d in enumerate(self.perturbed_datasets)]
 
-    def calcular_estabilidade_pcs(self, agt: str, limiar: float = 0.75) -> Tuple[float, bool, str]:
-        """Calcula o score de estabilidade empírica do PCS com base nas perturbações."""
-        if not self.perturbed_datasets:
-            self.gerar_perturbacoes_bootstrap(agt)
-
+    def medir_estabilidade_limpeza(self, agt: str) -> Tuple[float, Optional[str]]:
+        """Mede a estabilidade da limpeza e relata problemas encontrados."""
         if len(self.perturbed_datasets) < 2:
-            return 0.0, False, "A estabilidade exige ao menos duas perturbações."
+            return 0.0, "A estabilidade exige ao menos duas perturbações."
         numeric_cols = [c for c in self.processed_data.select_dtypes(include=[np.number]).columns if c != self.target_column]
         if not numeric_cols:
-            return 0.0, False, "A estabilidade exige ao menos uma variável numérica após a codificação."
+            return 0.0, "A estabilidade exige ao menos uma variável numérica após a codificação."
         matrizes = [amostra[numeric_cols].corr().fillna(0).to_numpy() for amostra in self.perturbed_datasets]
         corr_diffs = [np.mean(np.abs(a - b)) for a, b in combinations(matrizes, 2)]
         # A diferença absoluta entre duas correlações varia de 0 a 2.
         score = 1.0 - float(np.mean(corr_diffs)) / 2.0
 
-        if self._coluna_simulada is not None:
+        if self._coluna_simulada in self.processed_data.columns:
             valores = self.processed_data[self._coluna_simulada]
             amplitude = valores.quantile(0.75) - valores.quantile(0.25)
             if valores.max() > valores.quantile(0.99) + 3 * amplitude:
-                return score, False, f"Outlier em {self._coluna_simulada} após a limpeza."
+                return score, f"Outlier em {self._coluna_simulada} após a limpeza."
 
-        return score, score >= limiar, f"Estabilidade bootstrap {score:.4f}, limiar {limiar:.4f}."
+        return score, None
 
     def obter_matriz_features_aprovadas(self, agt: str) -> Dict[str, Any]:
         """Retorna metadados da matriz de features aprovada para o ModelAgent."""
@@ -254,10 +254,10 @@ class DataScienceEnv(Environment):
             "n_features": len(feature_cols),
             "features": feature_cols,
             "target": self.target_column,
-            "permite_replanejamento": len(feature_cols) > 1,
+            "tarefa": self.tarefa,
         }
 
-    def treinar_e_avaliar_hipoteses(self, agt: str, plano: str = PLANO_COMPLETO) -> Dict[str, Any]:
+    def treinar_e_avaliar_hipoteses(self, agt: str, plano: str, candidatos, selecionar=None) -> Dict[str, Any]:
         """Treina as hipóteses do tipo de tarefa e avalia as perturbações."""
         if self.processed_data is None or self.raw_test is None or self.preprocessador is None:
             raise ValueError("Dados processados indisponíveis para modelagem.")
@@ -266,73 +266,19 @@ class DataScienceEnv(Environment):
         treino = self.processed_data.drop(columns=alvo)
         validacao = self.preprocessador.transform(self._features(self.raw_test))
         perturbacoes = self.perturbed_datasets
-        if plano == PLANO_REDUZIDO:
-            if treino.shape[1] < 2:
-                raise ValueError("O plano reduzido requer ao menos duas variáveis.")
-            pontuar = f_regression if self.tarefa == "regressao" else f_classif
-            seletor = SelectKBest(pontuar, k=treino.shape[1] // 2).fit(treino, self.processed_data[alvo])
-            colunas = list(seletor.get_feature_names_out())
+        colunas = None
+        if selecionar is not None:
+            colunas = list(selecionar(self.tarefa, treino, self.processed_data[alvo]))
+            if not colunas or len(set(colunas)) != len(colunas) or set(colunas) - set(treino.columns):
+                raise ValueError("Selecione variáveis distintas e presentes no treino.")
             treino = treino[colunas]
             validacao = validacao[colunas]
             perturbacoes = [amostra[colunas + [alvo]] for amostra in perturbacoes]
-        elif plano != PLANO_COMPLETO:
-            raise ValueError(f"Plano de modelagem desconhecido: {plano}")
+        configuracoes = {nome: clone(modelo) for nome, modelo in candidatos.items()}
         resultado = avaliar_modelos(
             self.tarefa, treino, self.processed_data[alvo], validacao, self.raw_test[alvo],
-            perturbacoes, alvo, metrica_principal=self.metrica_principal,
+            perturbacoes, alvo, candidatos=configuracoes, metrica_principal=self.metrica_principal,
         )
+        self.candidatos_avaliados = configuracoes
+        self.variaveis_selecionadas = colunas
         return {**resultado, "plano": plano, "variaveis": list(treino.columns)}
-
-    def auditar_predicoes_pcs(self, agt: str, predictions_data: Dict[str, Any],
-                              limiar_estabilidade: float = 0.80) -> Dict[str, Any]:
-        """Emite o certificado final PCS com base nas métricas da tarefa."""
-        modelos = predictions_data["models"]
-        criterio = predictions_data["primary_metric"]
-        limiares = {"accuracy": 0.70, "roc_auc": 0.50, "r2": 0.0}
-        computability_passed = predictions_data["elapsed_time_seconds"] < 30.0
-        auditorias = {}
-        for nome, dados in modelos.items():
-            valor = dados["metricas"][criterio]
-            estabilidade = dados["perturbation_stability"]
-            motivos = []
-            if not valor > limiares[criterio]:
-                motivos.append(f"{criterio}={valor:.4f} precisa superar {limiares[criterio]:.2f}")
-            if not estabilidade >= limiar_estabilidade:
-                motivos.append(f"estabilidade abaixo do limiar {limiar_estabilidade:g}")
-            if not computability_passed:
-                motivos.append("tempo da tentativa atingiu o limite de 30 s")
-            auditorias[nome] = {
-                "metricas": dados["metricas"], "estabilidade": estabilidade,
-                "aprovado": not motivos, "motivos": motivos,
-            }
-
-        aprovados = [nome for nome, auditoria in auditorias.items() if auditoria["aprovado"]]
-        melhor = max(aprovados, key=lambda nome: modelos[nome]["metricas"][criterio], default=None)
-        mean_stability = float(np.mean([m["perturbation_stability"] for m in modelos.values()]))
-        return {
-            "status": "CERTIFICADO" if melhor is not None else "REPROVADO",
-            "best_hypothesis": melhor,
-            "auditoria": {
-                "plano": predictions_data["plano"], "variaveis": predictions_data["variaveis"],
-                "criterio": criterio, "limiar_previsibilidade": limiares[criterio],
-                "limiar_estabilidade": limiar_estabilidade, "modelos": auditorias,
-                "tempo_segundos": predictions_data["elapsed_time_seconds"],
-                "modelo_selecionado": melhor,
-            },
-            "primary_metric": criterio,
-            "validation_scores": {nome: dados["metricas"][criterio] for nome, dados in modelos.items()},
-            "predictability": {
-                **(modelos[melhor]["metricas"] if melhor is not None else {}),
-                "verified": melhor is not None,
-            },
-            "computability": {
-                "execution_time_seconds": round(predictions_data["elapsed_time_seconds"], 3),
-                "verified": computability_passed,
-            },
-            "stability": {
-                "mean_perturbation_stability": round(mean_stability, 4),
-                "selected_perturbation_stability": modelos[melhor]["perturbation_stability"] if melhor is not None else None,
-                "inter_model_agreement": round(predictions_data["inter_model_agreement"], 4),
-                "verified": melhor is not None,
-            },
-        }

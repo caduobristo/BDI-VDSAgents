@@ -63,13 +63,37 @@ decisões e metadados pelas mensagens abaixo.
 | PCS → Explore | `adotar_plano_alternativo` | O motivo da primeira reprovação aciona o Plano B. |
 | PCS → Explore e Model | `pre_processamento_reprovado` | Uma segunda reprovação encerra a execução antes do treino. |
 | PCS → Explore / PCS → Model | `estabilidade_pcs_aprovada` / `autorizacao_para_modelagem` | O Explore pode liberar as features e o Model recebe autorização para treinar. |
-| Explore → Model | `matriz_features_aprovadas` | Identifica as features, o alvo e as dimensões. O Model aguarda tanto essa mensagem quanto a autorização do PCS. |
-| Model → PCS / PCS → Model | `auditar_predicoes_modelos` / `certificacao_pcs_emitida` | O Model envia as métricas das duas hipóteses, o tempo e a concordância. O PCS devolve o certificado usado no relatório. |
+| Explore → Model | `matriz_features_aprovadas` | Identifica as features, o alvo, a tarefa e as dimensões. O Model aguarda essa mensagem e a autorização do PCS. |
+| Model → PCS / PCS → Model | `auditar_predicoes_modelos` / `certificacao_pcs_emitida` | O Model envia as métricas dos candidatos, o tempo e a concordância. O PCS devolve o certificado usado no relatório. |
 | PCS → Model | `replanejar_modelagem` | A reprovação de todos os candidatos pode acionar uma segunda tentativa com menos variáveis. A mensagem inclui os motivos por candidato. |
 
 O PCS verifica o relatório de limpeza antes de avaliar as três amostras
 bootstrap. A estabilidade é 1 menos a metade da diferença absoluta média entre
 as matrizes de correlação. O limiar padrão é 0,75.
+
+### Onde alterar cada agente
+
+- **ExploreAgent** em [agents/explore_agent.py](agents/explore_agent.py).
+  Defina a estratégia em `PREPARO_PADRAO` ou `PREPARO_CONTINGENCIA`, ou
+  escolha a estratégia no plano e passe-a a `aplicar_preparo`. A função de
+  construção recebe as variáveis do treino e retorna um transformador clonável
+  pelo scikit-learn. O transformador recebe `X` e `y` no ajuste, funciona
+  com `X` na transformação e retorna um DataFrame com índice preservado.
+- **ModelAgent** em [agents/model_agent.py](agents/model_agent.py).
+  `criar_candidatos(tarefa)` retorna um dicionário de nomes distintos para
+  estimadores clonáveis. Para seleção por ROC AUC, os estimadores precisam
+  oferecer `predict_proba`. O seletor recebe tarefa, variáveis e alvo do
+  treino e retorna nomes de colunas. O ambiente guarda a configuração da
+  tentativa e o avaliador reajusta o vencedor com o preparo e a seleção
+  correspondentes, inclusive para candidatos com nomes ou parâmetros novos.
+- **PCSAgent** em [agents/pcs_agent.py](agents/pcs_agent.py).
+  Defina os cortes e a política em `auditar_predicoes_pcs` e a seleção final
+  em `escolher_modelo`, que recebe os candidatos aprovados. A decisão sobre a
+  limpeza fica em `plano_auditar_pre_processamento`. O ambiente fornece
+  medidas, e o agente decide sobre aprovação e replanejamento.
+
+Os testes em `tests/test_contrato_agentes.py` executam o programa em cópias
+isoladas e alteram um único arquivo de agente por cenário.
 
 ### Auditoria por modelo e replanejamento
 

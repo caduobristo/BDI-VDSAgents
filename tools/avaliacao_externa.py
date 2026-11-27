@@ -12,15 +12,12 @@ from sklearn.metrics import (
     r2_score, recall_score, roc_auc_score,
 )
 
-from tools.modeling import PLANO_REDUZIDO, criar_hipoteses
-
-
 def validar_ids(dados, origem, chave):
     if chave not in dados or dados[chave].isna().any() or dados[chave].duplicated().any():
         raise ValueError(f"{origem} precisa de uma chave '{chave}' única e preenchida por linha.")
 
 
-def gerar_predicoes(treino, teste, preprocessador, nome_modelo, variaveis, *, chave, alvo, tarefa):
+def gerar_predicoes(treino, teste, preprocessador, candidato, colunas, variaveis, *, chave, alvo, tarefa):
     validar_ids(treino, "O treino", chave)
     validar_ids(teste, "O teste externo", chave)
     if chave in ("predicao", "probabilidade_classe_positiva"):
@@ -30,28 +27,26 @@ def gerar_predicoes(treino, teste, preprocessador, nome_modelo, variaveis, *, ch
     if teste[chave].isin(treino[chave]).any():
         raise ValueError("Há ids compartilhados entre treino e teste externo.")
 
-    colunas = list(preprocessador.feature_names_in_)
     faltantes = set(colunas) - set(teste.columns)
     if faltantes:
         raise ValueError(f"Features ausentes em test.csv: {', '.join(sorted(faltantes))}.")
     preparo_final = clone(preprocessador)
-    X_treino = preparo_final.fit_transform(treino[colunas].replace([np.inf, -np.inf], np.nan))
+    X_treino = preparo_final.fit_transform(treino[colunas].replace([np.inf, -np.inf], np.nan), treino[alvo])
     X_teste = preparo_final.transform(teste[colunas].replace([np.inf, -np.inf], np.nan))
     if variaveis is not None:
         if set(variaveis) - set(X_treino.columns):
             raise ValueError("O reajuste não produziu todas as variáveis certificadas.")
         X_treino = X_treino[variaveis]
         X_teste = X_teste[variaveis]
-    modelo = criar_hipoteses(tarefa)[nome_modelo]
-    modelo.fit(X_treino, treino[alvo])
+    modelo = clone(candidato).fit(X_treino, treino[alvo])
     predicoes = pd.DataFrame({
         chave: teste[chave],
         "predicao": modelo.predict(X_teste),
     })
-    classes = modelo.classes_.tolist() if tarefa == "classificacao" else None
-    if classes is not None and len(classes) == 2:
+    classes = list(modelo.classes_) if tarefa == "classificacao" else None
+    if classes is not None and len(classes) == 2 and hasattr(modelo, "predict_proba"):
         predicoes["probabilidade_classe_positiva"] = modelo.predict_proba(X_teste)[:, 1]
-    return predicoes, classes
+    return predicoes, np.asarray(classes).tolist() if classes is not None else None
 
 
 def pontuar_predicoes(predicoes, arquivo_rotulos, *, chave, alvo, tarefa, classes=None, separador=","):
@@ -83,12 +78,13 @@ def pontuar_predicoes(predicoes, arquivo_rotulos, *, chave, alvo, tarefa, classe
         "f1": f1_score(y, previsto, **opcoes),
     }
     metricas["nps"] = sum(metricas.values()) / 4
-    if len(classes) == 2 and y.nunique() == 2:
+    if len(classes) == 2 and y.nunique() == 2 and "probabilidade_classe_positiva" in predicoes:
         metricas["auc"] = roc_auc_score(y == classes[1], predicoes["probabilidade_classe_positiva"])
     return metricas
 
 
-def avaliar_externamente(arquivo_treino, preprocessador, certificado, *, arquivo_teste, arquivo_rotulos,
+def avaliar_externamente(arquivo_treino, preprocessador, certificado, *, candidato, colunas_entrada,
+                        variaveis_selecionadas, arquivo_teste, arquivo_rotulos,
                         destino, chave, alvo, alvo_externo, tarefa, separador, n_treino_interno, n_validacao):
     nome = certificado["best_hypothesis"]
     criterio = certificado["primary_metric"]
@@ -118,13 +114,15 @@ def avaliar_externamente(arquivo_treino, preprocessador, certificado, *, arquivo
         "metricas_externas": None,
     }
     if nome is not None and certificado["status"] == "CERTIFICADO":
+        if candidato is None:
+            raise ValueError(f"A hipótese certificada '{nome}' está ausente da última tentativa.")
         print(f"[Avaliação externa] Hipótese fixada pela validação interna: {nome}.")
         treino = pd.read_csv(arquivo_treino, sep=separador, dtype={chave: "string"})
         teste = pd.read_csv(arquivo_teste, sep=separador, dtype={chave: "string"})
-        auditoria = certificado["auditoria"]
-        variaveis = auditoria["variaveis"] if auditoria["plano"] == PLANO_REDUZIDO else None
-        predicoes, classes = gerar_predicoes(treino, teste, preprocessador, nome, variaveis,
-                                            chave=chave, alvo=alvo, tarefa=tarefa)
+        predicoes, classes = gerar_predicoes(
+            treino, teste, preprocessador, candidato, colunas_entrada, variaveis_selecionadas,
+            chave=chave, alvo=alvo, tarefa=tarefa,
+        )
         predicoes.to_csv(pasta / "predicoes.csv", index=False)
         print(f"[Avaliação externa] {len(predicoes)} predições gravadas em {pasta / 'predicoes.csv'}.")
         print(f"[Avaliação externa] Lendo rótulos de {arquivo_rotulos} para pontuação.")

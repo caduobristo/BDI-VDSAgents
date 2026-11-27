@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from tools.avaliacao_externa import pontuar_predicoes
-from tools.modeling import criar_hipoteses
+from agents.model_agent import ModelAgent
 from tools.preprocessing import criar_preprocessador
 
 
@@ -98,7 +98,7 @@ class AvaliacaoExternaTest(unittest.TestCase):
         entradas = treino.drop(columns=["id", "CustomerId", "Surname", "Exited"])
         preparo = criar_preprocessador(entradas, robusto=False)
         variaveis = segunda["variaveis"]
-        modelo = criar_hipoteses("classificacao")[relatorio["modelo"]]
+        modelo = ModelAgent.criar_candidatos("classificacao")[relatorio["modelo"]]
         modelo.fit(preparo.fit_transform(entradas)[variaveis], treino["Exited"])
         esperado = modelo.predict_proba(preparo.transform(teste[entradas.columns])[variaveis])[:, 1]
         np.testing.assert_allclose(predicoes["probabilidade_classe_positiva"], esperado)
