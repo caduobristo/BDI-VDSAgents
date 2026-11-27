@@ -28,9 +28,9 @@ python main.py --dataset data/ames_houses/train.csv --alvo SalePrice --tarefa re
   para processar todo o CSV. `--separador` aceita outro delimitador, como `";"`.
 - `--metrica` define a métrica de seleção antes do treino. Use `roc_auc` para
   classificação binária, `accuracy` para classificação ou `r2` para regressão.
-  Bank Churn usa `roc_auc` por padrão. As demais classificações usam `accuracy`
-  e as regressões usam `r2`.
-- Em CSVs personalizados, o ambiente remove apenas linhas de origem
+  O exemplo executado sem `--dataset` usa `roc_auc`. Para um CSV informado,
+  os padrões são `accuracy` em classificação e `r2` em regressão.
+- O ambiente remove apenas linhas de origem
   inteiramente iguais antes da divisão. Identificadores distintos preservam
   observações que aparentam ser iguais depois do pré-processamento.
 
@@ -65,13 +65,11 @@ decisões e metadados pelas mensagens abaixo.
 | PCS → Explore / PCS → Model | `estabilidade_pcs_aprovada` / `autorizacao_para_modelagem` | O Explore pode liberar as features e o Model recebe autorização para treinar. |
 | Explore → Model | `matriz_features_aprovadas` | Identifica as features, o alvo e as dimensões. O Model aguarda tanto essa mensagem quanto a autorização do PCS. |
 | Model → PCS / PCS → Model | `auditar_predicoes_modelos` / `certificacao_pcs_emitida` | O Model envia as métricas das duas hipóteses, o tempo e a concordância. O PCS devolve o certificado usado no relatório. |
-| PCS → Model | `replanejar_modelagem` | Em Bank Churn, a reprovação de todos os candidatos pode acionar uma segunda tentativa com menos variáveis. A mensagem inclui os motivos por candidato. |
+| PCS → Model | `replanejar_modelagem` | A reprovação de todos os candidatos pode acionar uma segunda tentativa com menos variáveis. A mensagem inclui os motivos por candidato. |
 
 O PCS verifica o relatório de limpeza antes de avaliar as três amostras
 bootstrap. A estabilidade é 1 menos a metade da diferença absoluta média entre
-as matrizes de correlação. O limiar padrão é 0,75. Para Bank Churn, um máximo
-superior ao dobro do percentil 99 em `Balance` ou `EstimatedSalary` também
-reprova o pré-processamento.
+as matrizes de correlação. O limiar padrão é 0,75.
 
 ### Auditoria por modelo e replanejamento
 
@@ -81,27 +79,32 @@ deve ficar abaixo de 30 segundos. Para classificação, a estabilidade individua
 é a fração média de classes preditas iguais entre pares de ajustes bootstrap
 nas mesmas linhas de validação. O corte padrão é 0,80.
 
-Em Bank Churn, quando todos falham e há pelo menos duas variáveis, o ModelAgent
+Quando todos falham e há pelo menos duas variáveis, o ModelAgent
 tenta mais um plano. Ele mantém a metade das variáveis pré-processadas, arredondada
-para baixo, com maior estatística F de associação com o alvo no treino interno.
+para baixo, com maior estatística F no treino interno. O tipo de tarefa
+determina se a estatística é calculada para classificação ou regressão.
 Essa lista fica fixa nos bootstraps, na validação e no reajuste externo. Os dois
 planos usam os mesmos clientes, amostras bootstrap, algoritmos e limiares.
 
 Para observar o replanejamento com dados originais e o corte experimental de 0,95, execute
 
 ```powershell
-py -3.12 -X utf8 main.py --sem-simulacao --metrica roc_auc --limiar-estabilidade-modelo 0.95 --avaliacao-externa
+py -3.12 -X utf8 main.py --metrica roc_auc --limiar-estabilidade-modelo 0.95 --avaliacao-externa
 ```
 
-Com avaliação externa habilitada, o JSON guarda cada tentativa, as variáveis,
+Com avaliação externa habilitada, o JSON guarda cada tentativa de modelagem, as variáveis,
 as métricas, os motivos de reprovação e a mensagem do PCS. Se os dois planos
 falharem, o programa grava o histórico, encerra com código 1 e preserva o teste
 externo sem leitura ou geração de predições.
 
 ### Verificação da integração
 
-A execução padrão de Bank Churn usa falhas simuladas no treino para exercitar a contingência.
-Use `python main.py --sem-simulacao` para executar com a amostra original.
+O padrão usa os dados originais.
+Use `python main.py --simular-falhas` para demonstrar a contingência de
+limpeza. O ambiente insere, em memória, valores ausentes e um valor extremo
+em uma variável numérica do treino interno. Os CSVs e as partições de
+validação e teste são preservados. Os bootstraps do PCS fazem parte da
+auditoria em ambos os modos.
 O parâmetro `--limiar-estabilidade` controla a auditoria de limpeza. Com o
 valor 1 e a amostra padrão, as duas tentativas são reprovadas e o programa
 encerra com código 1 e o motivo informado pelo PCS.
@@ -109,29 +112,30 @@ encerra com código 1 e o motivo informado pelo PCS.
 Execute `python -m unittest discover -s tests -v` para verificar as partições,
 a aprovação direta, a recuperação pelo Plano B e o encerramento por reprovação.
 
-### Avaliação externa de Bank Churn
+### Avaliação externa nas três bases
 
 ```powershell
-py -3.12 -X utf8 main.py --sem-simulacao --metrica roc_auc --avaliacao-externa
+py -3.12 -X utf8 main.py --avaliacao-externa
+py -3.12 -X utf8 main.py --dataset data/obesity_risks/train.csv --alvo NObeyesdad --alvo-externo True --avaliacao-externa
+py -3.12 -X utf8 main.py --dataset data/ames_houses/train.csv --alvo SalePrice --tarefa regressao --id-coluna Order --avaliacao-externa
 ```
 
-Os agentes usam somente `train.csv` para aprovar o plano de limpeza e
-selecionar o modelo aprovado de maior ROC AUC na validação interna. A métrica usa as
-probabilidades de `Exited = 1` calculadas por cada candidato. Para esse
-critério, o PCS exige ROC AUC superior a 0,5, referência de ordenação
-aleatória. Para repetir a seleção anterior, use `--metrica accuracy`. A amostra padrão
-contém 750 linhas para treino e 250 para validação. A opção
-`--tamanho-amostra 0` usa o arquivo inteiro nessa seleção.
+Os agentes usam apenas o arquivo de treino para escolher o modelo.
+Após a certificação, o programa reajusta o preparo e o modelo com o treino
+completo, mantendo as colunas selecionadas quando o plano reduzido vence.
+Em seguida, grava `predicoes.csv` e só então lê os rótulos externos.
 
-Após a entrega do certificado PCS, o programa reajusta o pré-processamento
-aprovado e a hipótese vencedora com **todo** o `train.csv`. Ele prevê a
-classe e a probabilidade de `Exited = 1` para cada `id` de `test.csv` e
-grava `predicoes.csv`. Só então lê `id` e `Exited` de `test_eval.csv`.
-O avaliador alinha os rótulos por `id` e exige uma correspondência de um
-para um para calcular acurácia, precisão, recall, F1 e ROC AUC.
+Por padrão, o programa busca `test.csv` e `test_eval.csv` ao lado do treino.
+Use `--teste-externo` e `--rotulos-externos` para outros caminhos e
+`--alvo-externo` quando a coluna do gabarito tiver outro nome. Os três CSVs
+devem trazer a chave configurada em `--id-coluna` (padrão `id`), que é
+excluída das variáveis do modelo. O teste fornece as variáveis sem o alvo.
+As chaves do teste devem coincidir com as dos rótulos e ser distintas das do treino.
 
-Cada execução cria uma pasta em `resultados/avaliacao-externa/` com as
-predições e o `relatorio.json`. O relatório identifica o modelo, o critério
-de seleção, a pontuação de cada candidato, a acurácia de validação do vencedor, o status do PCS, as quantidades de
-linhas e as métricas externas. Use `--saida-externa` para escolher o diretório
-e `--rotulos-externos` para indicar outro arquivo de rótulos por id.
+O relatório usa precisão, recall e F1 binários para duas classes, com a
+segunda classe na ordenação do modelo como positiva. Nesse caso, o CSV de
+predições inclui `probabilidade_classe_positiva` e o avaliador calcula AUC
+quando as duas classes aparecem no gabarito. Em multiclasse, usa média macro.
+Em regressão, calcula RMSE, MAE e R². O NPS individual é gravado no
+`relatorio.json`. As saídas ficam em `resultados/avaliacao-externa/`, com opção
+de alterar o destino via `--saida-externa`.

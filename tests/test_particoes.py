@@ -9,8 +9,8 @@ from tools.modeling import PLANO_REDUZIDO
 
 class ParticoesTest(unittest.TestCase):
     def test_plano_reduzido_seleciona_variaveis_somente_no_treino(self):
-        env = DataScienceEnv("TesteSelecao", simular_falhas=False)
-        env.carregar_dataset("ExploreAgent")
+        env = DataScienceEnv("TesteSelecao", alvo="Exited", ignorar=["id", "CustomerId", "Surname"])
+        env.carregar_dataset("ExploreAgent", "data/bank_churn/train.csv")
         env.executar_limpeza_padrao("ExploreAgent")
         env.gerar_perturbacoes_bootstrap("PCSAgent")
         inicial = env.treinar_e_avaliar_hipoteses("ModelAgent", PLANO_REDUZIDO)
@@ -20,8 +20,8 @@ class ParticoesTest(unittest.TestCase):
         self.assertEqual(inicial["variaveis"], alterado["variaveis"])
 
     def test_teste_reservado_nos_dois_planos(self):
-        env = DataScienceEnv("TesteParticoes")
-        env.carregar_dataset("ExploreAgent")
+        env = DataScienceEnv("TesteParticoes", alvo="Exited", ignorar=["id", "CustomerId", "Surname"])
+        env.carregar_dataset("ExploreAgent", "data/bank_churn/train.csv")
         treino, teste = env.raw_data.index, env.raw_test.index
         self.assertEqual((len(treino), len(teste)), (750, 250))
         self.assertTrue(treino.intersection(teste).empty)

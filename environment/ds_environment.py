@@ -1,11 +1,10 @@
 """Ambiente de execução para tarefas de ciência de dados e princípios PCS."""
 from itertools import combinations
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from maspy import Environment
 import numpy as np
 import pandas as pd
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import SelectKBest, f_classif, f_regression
 from sklearn.model_selection import train_test_split
 
 from tools.modeling import METRICAS_SELECAO, PLANO_COMPLETO, PLANO_REDUZIDO, avaliar_modelos
@@ -13,15 +12,12 @@ from tools.preprocessing import criar_preprocessador
 from tools.unit_test import run_data_cleaning_tests
 
 
-BANK_CHURN = "data/bank_churn/train.csv"
-
-
 class DataScienceEnv(Environment):
     """Ambiente MASPY para manipulação de datasets, perturbações e auditoria PCS."""
 
     def __init__(
-        self, env_name: Optional[str] = "DataScienceEnv", simular_falhas: bool = True, *,
-        alvo: str = "Exited", tarefa: str = "classificacao",
+        self, env_name: Optional[str] = "DataScienceEnv", simular_falhas: bool = False, *,
+        alvo: str, tarefa: str = "classificacao",
         ignorar: Optional[List[str]] = None,
     ):
         if tarefa not in ("classificacao", "regressao"):
@@ -39,12 +35,13 @@ class DataScienceEnv(Environment):
         self.metrica_principal = METRICAS_SELECAO[tarefa][0]
         self.identifier_columns = ignorar
         self._colunas_ignoradas: List[str] = []
-        self._bank_churn = False
+        self._linhas_originais: Optional[pd.DataFrame] = None
+        self._coluna_simulada: Optional[str] = None
 
     def carregar_dataset(
         self,
         agt: str,
-        path: str = BANK_CHURN,
+        path: str,
         sample_size: int = 1000,
         separador: str = ",",
         metrica: Optional[str] = None,
@@ -56,25 +53,21 @@ class DataScienceEnv(Environment):
         alvo = self.target_column
         if alvo not in df.columns:
             raise ValueError(f"Coluna alvo '{alvo}' ausente no CSV: {', '.join(df.columns)}.")
-        bank_churn = Path(path).resolve() == Path(BANK_CHURN).resolve() and alvo == "Exited"
         opcoes = METRICAS_SELECAO[self.tarefa]
         if metrica is None:
-            metrica = "roc_auc" if bank_churn and self.tarefa == "classificacao" else opcoes[0]
+            metrica = opcoes[0]
         if metrica not in opcoes:
             raise ValueError(f"Métrica '{metrica}' incompatível com {self.tarefa}. Use {', '.join(opcoes)}.")
         if metrica == "roc_auc" and df[alvo].nunique() != 2:
             raise ValueError("ROC AUC requer um alvo de classificação binária.")
-        ignoradas = list(self.identifier_columns or [])
-        if self.identifier_columns is None:
-            ignoradas = ["id", "CustomerId", "Surname"] if bank_churn else [
-                col for col in df.columns if col.casefold() == "id" and col != alvo
-            ]
+        ignoradas = list(self.identifier_columns) if self.identifier_columns is not None else [
+            col for col in df.columns if col.casefold() == "id" and col != alvo
+        ]
         if alvo in ignoradas or set(ignoradas) - set(df.columns):
             raise ValueError("As colunas a ignorar devem existir no CSV e ser diferentes do alvo.")
         if len(set(df.columns) - {alvo, *ignoradas}) == 0:
             raise ValueError("O CSV precisa de pelo menos uma coluna de entrada.")
-        if not bank_churn:
-            df = df.drop_duplicates()
+        df = df.drop_duplicates()
         if df[alvo].isna().any():
             raise ValueError(f"A coluna alvo '{alvo}' contém valores ausentes.")
         if self.tarefa == "regressao":
@@ -97,21 +90,14 @@ class DataScienceEnv(Environment):
         if metrica == "roc_auc" and test[alvo].nunique() != 2:
             raise ValueError("ROC AUC requer as duas classes na validação interna. Use uma amostra maior.")
         df = df.copy()
+        linhas_originais = df.copy() if self.simular_falhas else df
+        coluna_simulada = self._simular_falha_de_limpeza(df, ignoradas) if self.simular_falhas else None
         null_counts = df.isnull().sum()
-        if bank_churn and self.simular_falhas and null_counts.sum() == 0:
-            rng = np.random.default_rng(42)
-            for col in ["Age", "Balance", "EstimatedSalary"]:
-                if col in df.columns:
-                    mask = rng.random(len(df)) < 0.05
-                    df.loc[mask, col] = np.nan
-            outlier_idx = rng.choice(df.index, size=min(15, len(df)), replace=False)
-            df.loc[outlier_idx[:8], "Balance"] = df["Balance"].max() * 3.5
-            df.loc[outlier_idx[8:], "EstimatedSalary"] = df["EstimatedSalary"].max() * 4.0
-            null_counts = df.isnull().sum()
 
         self.raw_data = df
         self.raw_test = test
-        self._bank_churn = bank_churn
+        self._linhas_originais = linhas_originais
+        self._coluna_simulada = coluna_simulada
         self.metrica_principal = metrica
         self._colunas_ignoradas = ignoradas
         self.processed_data = None
@@ -127,10 +113,24 @@ class DataScienceEnv(Environment):
             "has_missing": len(cols_with_nulls) > 0,
         }
 
+    def _simular_falha_de_limpeza(self, treino: pd.DataFrame, ignoradas: List[str]) -> str:
+        numericas = treino.drop(columns=[self.target_column, *ignoradas]).select_dtypes(include="number")
+        for coluna, valores in numericas.items():
+            valores = valores.replace([np.inf, -np.inf], np.nan)
+            amplitude = valores.quantile(0.75) - valores.quantile(0.25)
+            if amplitude > 0:
+                rng = np.random.default_rng(42)
+                treino[coluna] = treino[coluna].astype(float)
+                indices = rng.permutation(treino.index)
+                treino.loc[indices[:max(1, len(treino) // 20)], coluna] = np.nan
+                treino.loc[indices[-1], coluna] = valores.max() + 30 * amplitude
+                return coluna
+        raise ValueError("A simulação exige pelo menos uma variável numérica com intervalo interquartil positivo.")
+
     def verificar_nulidades(self, agt: str) -> Dict[str, Any]:
         """Inspeciona valores nulos no dataset corrente."""
         if self.raw_data is None:
-            self.carregar_dataset(agt)
+            raise ValueError("Carregue o dataset antes de verificar nulidades.")
         df = self.raw_data if self.processed_data is None else self.processed_data
 
         null_series = df.isnull().sum()
@@ -148,7 +148,7 @@ class DataScienceEnv(Environment):
 
     def _preparar_treino(self, agt: str, robusto: bool) -> Dict[str, Any]:
         if self.raw_data is None:
-            self.carregar_dataset(agt)
+            raise ValueError("Carregue o dataset antes de executar a limpeza.")
 
         features = self._features(self.raw_data)
         preprocessador = criar_preprocessador(features, robusto)
@@ -168,7 +168,7 @@ class DataScienceEnv(Environment):
         test_results = run_data_cleaning_tests(
             df,
             original_data_or_path=self.raw_data,
-            linhas_para_duplicatas=None if self._bank_churn else self.raw_data,
+            linhas_para_duplicatas=self._linhas_originais,
         )
 
         self.preprocessador = preprocessador
@@ -235,13 +235,11 @@ class DataScienceEnv(Environment):
         # A diferença absoluta entre duas correlações varia de 0 a 2.
         score = 1.0 - float(np.mean(corr_diffs)) / 2.0
 
-        colunas_churn = ("Balance", "EstimatedSalary") if self._bank_churn else ()
-        for col in colunas_churn:
-            if col in self.processed_data.columns:
-                q99 = self.processed_data[col].quantile(0.99)
-                max_val = self.processed_data[col].max()
-                if max_val > q99 * 2.0:
-                    return score, False, f"Outlier em {col}: máximo superior ao dobro do percentil 99."
+        if self._coluna_simulada is not None:
+            valores = self.processed_data[self._coluna_simulada]
+            amplitude = valores.quantile(0.75) - valores.quantile(0.25)
+            if valores.max() > valores.quantile(0.99) + 3 * amplitude:
+                return score, False, f"Outlier em {self._coluna_simulada} após a limpeza."
 
         return score, score >= limiar, f"Estabilidade bootstrap {score:.4f}, limiar {limiar:.4f}."
 
@@ -256,7 +254,7 @@ class DataScienceEnv(Environment):
             "n_features": len(feature_cols),
             "features": feature_cols,
             "target": self.target_column,
-            "permite_replanejamento": self._bank_churn and self.tarefa == "classificacao" and len(feature_cols) > 1,
+            "permite_replanejamento": len(feature_cols) > 1,
         }
 
     def treinar_e_avaliar_hipoteses(self, agt: str, plano: str = PLANO_COMPLETO) -> Dict[str, Any]:
@@ -269,9 +267,10 @@ class DataScienceEnv(Environment):
         validacao = self.preprocessador.transform(self._features(self.raw_test))
         perturbacoes = self.perturbed_datasets
         if plano == PLANO_REDUZIDO:
-            if not self._bank_churn or self.tarefa != "classificacao" or treino.shape[1] < 2:
-                raise ValueError("O plano reduzido requer Bank Churn e ao menos duas variáveis.")
-            seletor = SelectKBest(f_classif, k=treino.shape[1] // 2).fit(treino, self.processed_data[alvo])
+            if treino.shape[1] < 2:
+                raise ValueError("O plano reduzido requer ao menos duas variáveis.")
+            pontuar = f_regression if self.tarefa == "regressao" else f_classif
+            seletor = SelectKBest(pontuar, k=treino.shape[1] // 2).fit(treino, self.processed_data[alvo])
             colunas = list(seletor.get_feature_names_out())
             treino = treino[colunas]
             validacao = validacao[colunas]

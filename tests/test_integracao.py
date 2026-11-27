@@ -29,12 +29,12 @@ class FluxoAgentesTest(unittest.TestCase):
         self.assertLess(log.index(treino), log.index("Status da Certificação PCS:"))
 
     def test_aprovacao_direta(self):
-        resultado = self.executar("--sem-simulacao")
+        resultado = self.executar()
         self.verificar_entrega(resultado)
         self.assertNotIn("Ativando Plano B", resultado.stdout)
 
     def test_recuperacao_pelo_plano_b(self):
-        resultado = self.executar()
+        resultado = self.executar("--simular-falhas")
         self.verificar_entrega(resultado)
         self.assertEqual(resultado.stdout.count("Ativando Plano B"), 1)
         self.assertLess(resultado.stdout.index("Ativando Plano B"), resultado.stdout.index("Iniciando treinamento"))
@@ -72,7 +72,7 @@ class FluxoAgentesTest(unittest.TestCase):
     def test_esgota_planos_sem_abrir_rotulos_externos(self):
         with TemporaryDirectory() as temp:
             pasta = Path(temp)
-            resultado = self.executar("--sem-simulacao", "--limiar-estabilidade-modelo", "1",
+            resultado = self.executar("--limiar-estabilidade-modelo", "1",
                                       "--avaliacao-externa", "--saida-externa", temp,
                                       "--rotulos-externos", str(pasta / "rotulos_inexistentes.csv"))
             self.assertEqual(resultado.returncode, 1, resultado.stdout + resultado.stderr)

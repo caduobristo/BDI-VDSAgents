@@ -1,80 +1,105 @@
-"""Avaliação externa de uma hipótese já selecionada para Bank Churn."""
+"""Avaliação externa de uma hipótese já selecionada pelo PCS."""
 
 import json
 from pathlib import Path
 from tempfile import mkdtemp
 
+import numpy as np
 import pandas as pd
 from sklearn.base import clone
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score, f1_score, mean_absolute_error, mean_squared_error, precision_score,
+    r2_score, recall_score, roc_auc_score,
+)
 
 from tools.modeling import PLANO_REDUZIDO, criar_hipoteses
 
 
-def validar_ids(dados, origem):
-    if "id" not in dados or dados["id"].isna().any() or dados["id"].duplicated().any():
-        raise ValueError(f"{origem} precisa de um id único e preenchido por linha.")
+def validar_ids(dados, origem, chave):
+    if chave not in dados or dados[chave].isna().any() or dados[chave].duplicated().any():
+        raise ValueError(f"{origem} precisa de uma chave '{chave}' única e preenchida por linha.")
 
 
-def prever_bank_churn(treino, teste, preprocessador, nome_modelo, variaveis=None):
-    validar_ids(treino, "train.csv")
-    validar_ids(teste, "test.csv")
-    if "Exited" in teste:
-        raise ValueError("test.csv deve conter somente identificadores e features.")
-    if teste["id"].isin(treino["id"]).any():
+def gerar_predicoes(treino, teste, preprocessador, nome_modelo, variaveis, *, chave, alvo, tarefa):
+    validar_ids(treino, "O treino", chave)
+    validar_ids(teste, "O teste externo", chave)
+    if chave in ("predicao", "probabilidade_classe_positiva"):
+        raise ValueError(f"A chave '{chave}' conflita com uma coluna de saída.")
+    if alvo in teste:
+        raise ValueError("O teste externo deve conter somente identificadores e variáveis de entrada.")
+    if teste[chave].isin(treino[chave]).any():
         raise ValueError("Há ids compartilhados entre treino e teste externo.")
 
     colunas = list(preprocessador.feature_names_in_)
     faltantes = set(colunas) - set(teste.columns)
     if faltantes:
         raise ValueError(f"Features ausentes em test.csv: {', '.join(sorted(faltantes))}.")
-    if set(treino["Exited"].unique()) != {0, 1}:
-        raise ValueError("O treino de Bank Churn precisa das classes 0 e 1 em Exited.")
-
     preparo_final = clone(preprocessador)
-    X_treino = preparo_final.fit_transform(treino[colunas])
-    X_teste = preparo_final.transform(teste[colunas])
+    X_treino = preparo_final.fit_transform(treino[colunas].replace([np.inf, -np.inf], np.nan))
+    X_teste = preparo_final.transform(teste[colunas].replace([np.inf, -np.inf], np.nan))
     if variaveis is not None:
         if set(variaveis) - set(X_treino.columns):
             raise ValueError("O reajuste não produziu todas as variáveis certificadas.")
         X_treino = X_treino[variaveis]
         X_teste = X_teste[variaveis]
-    modelo = criar_hipoteses("classificacao")[nome_modelo]
-    modelo.fit(X_treino, treino["Exited"])
-    classe_positiva = list(modelo.classes_).index(1)
-    return pd.DataFrame({
-        "id": teste["id"],
+    modelo = criar_hipoteses(tarefa)[nome_modelo]
+    modelo.fit(X_treino, treino[alvo])
+    predicoes = pd.DataFrame({
+        chave: teste[chave],
         "predicao": modelo.predict(X_teste),
-        "probabilidade_churn": modelo.predict_proba(X_teste)[:, classe_positiva],
     })
+    classes = modelo.classes_.tolist() if tarefa == "classificacao" else None
+    if classes is not None and len(classes) == 2:
+        predicoes["probabilidade_classe_positiva"] = modelo.predict_proba(X_teste)[:, 1]
+    return predicoes, classes
 
 
-def pontuar_bank_churn(predicoes, arquivo_rotulos):
-    rotulos = pd.read_csv(arquivo_rotulos, usecols=["id", "Exited"])
-    validar_ids(rotulos, "Arquivo de rótulos")
-    validar_ids(predicoes, "Predições")
-    if set(rotulos["id"]) != set(predicoes["id"]):
+def pontuar_predicoes(predicoes, arquivo_rotulos, *, chave, alvo, tarefa, classes=None, separador=","):
+    rotulos = pd.read_csv(arquivo_rotulos, sep=separador, usecols=[chave, alvo], dtype={chave: "string"})
+    validar_ids(rotulos, "O arquivo de rótulos", chave)
+    validar_ids(predicoes, "As predições", chave)
+    if set(rotulos[chave]) != set(predicoes[chave]):
         raise ValueError("Os ids dos rótulos externos e das predições devem coincidir.")
-    y = rotulos.set_index("id").loc[predicoes["id"], "Exited"]
-    if set(y.unique()) != {0, 1}:
-        raise ValueError("A avaliação com AUC exige rótulos externos 0 e 1.")
+    y = rotulos.set_index(chave).loc[predicoes[chave], alvo]
     previsto = predicoes["predicao"]
-    return {
+    if y.isna().any():
+        raise ValueError("Os rótulos externos precisam estar preenchidos.")
+    if tarefa == "regressao":
+        rmse = float(np.sqrt(mean_squared_error(y, previsto)))
+        mae = float(mean_absolute_error(y, previsto))
+        r2 = float(r2_score(y, previsto)) if len(y) >= 2 else None
+        return {"rmse": rmse, "mae": mae, "r2": r2,
+                "nps": (1 / (1 + rmse) + 1 / (1 + mae) + r2) / 3 if r2 is not None else None}
+
+    if not set(y).issubset(classes):
+        raise ValueError("Os rótulos externos contêm classes ausentes do treino.")
+    opcoes = {"average": "macro", "labels": classes, "zero_division": 0}
+    if len(classes) == 2:
+        opcoes = {"average": "binary", "pos_label": classes[1], "zero_division": 0}
+    metricas = {
         "acuracia": accuracy_score(y, previsto),
-        "precisao": precision_score(y, previsto, zero_division=0),
-        "recall": recall_score(y, previsto, zero_division=0),
-        "f1": f1_score(y, previsto, zero_division=0),
-        "auc": roc_auc_score(y, predicoes["probabilidade_churn"]),
+        "precisao": precision_score(y, previsto, **opcoes),
+        "recall": recall_score(y, previsto, **opcoes),
+        "f1": f1_score(y, previsto, **opcoes),
     }
+    metricas["nps"] = sum(metricas.values()) / 4
+    if len(classes) == 2 and y.nunique() == 2:
+        metricas["auc"] = roc_auc_score(y == classes[1], predicoes["probabilidade_classe_positiva"])
+    return metricas
 
 
-def avaliar_bank_churn(arquivo_treino, preprocessador, certificado, arquivo_rotulos, destino,
-                      n_treino_interno, n_validacao):
+def avaliar_externamente(arquivo_treino, preprocessador, certificado, *, arquivo_teste, arquivo_rotulos,
+                        destino, chave, alvo, alvo_externo, tarefa, separador, n_treino_interno, n_validacao):
     nome = certificado["best_hypothesis"]
     criterio = certificado["primary_metric"]
     destino.mkdir(parents=True, exist_ok=True)
-    pasta = Path(mkdtemp(prefix="bank_churn-", dir=destino))
+    pasta = Path(mkdtemp(prefix=f"{arquivo_treino.parent.name}-", dir=destino))
     relatorio = {
+        "dataset": str(arquivo_treino),
+        "tarefa": tarefa,
+        "chave": chave,
+        "alvo": alvo,
+        "alvo_externo": alvo_externo,
         "modelo": nome,
         "historico_modelagem": certificado["historico_modelagem"],
         "replanejamentos": len(certificado["historico_modelagem"]) - 1,
@@ -94,18 +119,24 @@ def avaliar_bank_churn(arquivo_treino, preprocessador, certificado, arquivo_rotu
     }
     if nome is not None and certificado["status"] == "CERTIFICADO":
         print(f"[Avaliação externa] Hipótese fixada pela validação interna: {nome}.")
-        treino = pd.read_csv(arquivo_treino)
-        teste = pd.read_csv(arquivo_treino.with_name("test.csv"))
+        treino = pd.read_csv(arquivo_treino, sep=separador, dtype={chave: "string"})
+        teste = pd.read_csv(arquivo_teste, sep=separador, dtype={chave: "string"})
         auditoria = certificado["auditoria"]
         variaveis = auditoria["variaveis"] if auditoria["plano"] == PLANO_REDUZIDO else None
-        predicoes = prever_bank_churn(treino, teste, preprocessador, nome, variaveis)
+        predicoes, classes = gerar_predicoes(treino, teste, preprocessador, nome, variaveis,
+                                            chave=chave, alvo=alvo, tarefa=tarefa)
         predicoes.to_csv(pasta / "predicoes.csv", index=False)
         print(f"[Avaliação externa] {len(predicoes)} predições gravadas em {pasta / 'predicoes.csv'}.")
         print(f"[Avaliação externa] Lendo rótulos de {arquivo_rotulos} para pontuação.")
-        metricas = pontuar_bank_churn(predicoes, arquivo_rotulos)
+        metricas = pontuar_predicoes(predicoes, arquivo_rotulos, chave=chave, alvo=alvo_externo,
+                                    tarefa=tarefa, classes=classes, separador=separador)
+        if classes is not None:
+            relatorio["classes"] = classes
+            if len(classes) == 2:
+                relatorio["classe_positiva"] = classes[1]
         relatorio.update(linhas_reajuste=len(treino), linhas_teste_externo=len(teste), metricas_externas=metricas)
-        for chave, valor in metricas.items():
-            print(f"  {chave}: {valor:.4f}")
+        for metrica, valor in metricas.items():
+            print(f"  {metrica}: {valor:.4f}" if valor is not None else f"  {metrica}: indisponível")
     (pasta / "relatorio.json").write_text(
         json.dumps(relatorio, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
