@@ -44,7 +44,7 @@ class DataScienceEnv(Environment):
         self,
         agt: str,
         path: str,
-        sample_size: int = 1000,
+        sample_size: int = 0,
         separador: str = ",",
         metrica: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -251,6 +251,7 @@ class DataScienceEnv(Environment):
         feature_cols = [c for c in self.processed_data.columns if c != self.target_column]
         return {
             "n_samples": len(self.processed_data),
+            "n_validacao": len(self.raw_test),
             "n_features": len(feature_cols),
             "features": feature_cols,
             "target": self.target_column,

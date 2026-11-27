@@ -30,6 +30,7 @@ class ContratoAgentesTest(unittest.TestCase):
             destino = projeto / "resultados"
             processo = subprocess.run(
                 [sys.executable, "-X", "utf8", str(projeto / "main.py"), "--avaliacao-externa",
+                 "--tamanho-amostra", "1000",
                  "--saida-externa", str(destino)],
                 cwd=RAIZ, capture_output=True, encoding="utf8", timeout=120,
             )

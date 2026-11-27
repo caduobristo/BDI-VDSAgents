@@ -28,10 +28,18 @@ class AvaliacaoExternaTest(unittest.TestCase):
         )
         self.assertEqual(processo.returncode, 0, processo.stdout + processo.stderr)
         log = processo.stdout
-        self.assertLess(log.index("Melhor Hipótese Selecionada"), log.index("predições gravadas"))
-        self.assertLess(log.index("predições gravadas"), log.index("Lendo rótulos"))
+        eventos = (
+            "Treino interno | Iniciando", "Treino interno | Treinamento finalizado",
+            "Melhor Hipótese Selecionada", "Reajuste final | Reajustando",
+            "Reajuste final concluído", "predições gravadas", "Lendo rótulos",
+        )
+        ordem = [log.index(evento) for evento in eventos]
+        self.assertEqual(ordem, sorted(ordem))
         pasta, = destino.iterdir()
         relatorio = json.loads((pasta / "relatorio.json").read_text(encoding="utf8"))
+        interno = relatorio["selecao_interna"]
+        self.assertIn(f"{interno['linhas_treino']} linhas de treino e {interno['linhas_validacao']} de validação", log)
+        self.assertIn(f"{relatorio['linhas_reajuste']} linhas do treino completo", log)
         assinatura = hashlib.sha256((pasta / "predicoes.csv").read_bytes()).hexdigest()
         return relatorio, assinatura
 
@@ -73,10 +81,13 @@ class AvaliacaoExternaTest(unittest.TestCase):
     def test_replaneja_uma_vez_e_seleciona_apenas_entre_aprovados(self):
         with TemporaryDirectory() as temp:
             destino = Path(temp)
-            relatorio, _ = self.executar(destino, "--limiar-estabilidade-modelo", "0.95")
+            relatorio, _ = self.executar(destino, "--tamanho-amostra", "1000", "--limiar-estabilidade-modelo", "0.95")
             arquivo, = destino.glob("*/predicoes.csv")
             predicoes = pd.read_csv(arquivo, nrows=50).set_index("id")
         primeira, segunda = relatorio["historico_modelagem"]
+        self.assertEqual(relatorio["selecao_interna"]["linhas_treino"], 750)
+        self.assertEqual(relatorio["selecao_interna"]["linhas_validacao"], 250)
+        self.assertEqual(relatorio["linhas_reajuste"], 107272)
         self.assertEqual(relatorio["replanejamentos"], 1)
         self.assertEqual(primeira["mensagem"], "replanejar_modelagem")
         self.assertIsNone(primeira["modelo_selecionado"])
@@ -106,6 +117,7 @@ class AvaliacaoExternaTest(unittest.TestCase):
     def test_certifica_o_estavel_sem_replanejar_quando_so_um_passa(self):
         with TemporaryDirectory() as temp:
             relatorio, _ = self.executar(Path(temp), "--metrica", "accuracy",
+                                         "--tamanho-amostra", "1000",
                                          "--limiar-estabilidade-modelo", "0.94")
         tentativa, = relatorio["historico_modelagem"]
         floresta = tentativa["modelos"]["RandomForest"]
@@ -131,7 +143,8 @@ class AvaliacaoExternaTest(unittest.TestCase):
         with TemporaryDirectory() as temp:
             relatorio, _ = self.executar(
                 Path(temp), "--dataset", "data/obesity_risks/train.csv",
-                "--alvo", "NObeyesdad", "--alvo-externo", "True", "--limiar-estabilidade-modelo", "0.84",
+                "--alvo", "NObeyesdad", "--alvo-externo", "True",
+                "--tamanho-amostra", "1000", "--limiar-estabilidade-modelo", "0.84",
             )
         metricas = relatorio["metricas_externas"]
         self.assertEqual(relatorio["alvo_externo"], "True")

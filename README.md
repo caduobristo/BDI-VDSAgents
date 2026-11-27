@@ -24,8 +24,9 @@ python main.py --dataset data/ames_houses/train.csv --alvo SalePrice --tarefa re
 - `--ignorar` exclui uma coluna da modelagem e pode ser repetido. Sem essa
   opção, o ambiente ignora `id` (sem distinguir maiúsculas de minúsculas)
   ou os identificadores configurados no exemplo de Bank Churn.
-- `--tamanho-amostra` limita a entrada a 1.000 linhas por padrão. Use `0`
-  para processar todo o CSV. `--separador` aceita outro delimitador, como `";"`.
+- A seleção interna usa todo o CSV de treino por padrão. Para uma rodada
+  rápida, passe `--tamanho-amostra 1000`. O valor `0` também usa todas as
+  linhas. `--separador` aceita outro delimitador, como `";"`.
 - `--metrica` define a métrica de seleção antes do treino. Use `roc_auc` para
   classificação binária, `accuracy` para classificação ou `r2` para regressão.
   O exemplo executado sem `--dataset` usa `roc_auc`. Para um CSV informado,
@@ -47,12 +48,12 @@ antes de interpretar os resultados como desempenho em dados novos.
 
 ### Contrato entre os agentes
 
-O ambiente separa a amostra em 75% para treino e 25% para
-teste, com semente 42 e estratificação pelo alvo em classificação. Ambos os planos de
+O ambiente separa os dados em 75% para treino e 25% para validação interna,
+com semente 42 e estratificação pelo alvo em classificação. Ambos os planos de
 limpeza usam o mesmo treino. Os dados simulados de contingência, o ajuste
 da imputação e da codificação, a auditoria da limpeza e as três amostras
-bootstrap usam apenas essa partição. Na modelagem, o ambiente aplica ao
-teste o pré-processamento aprovado e avalia todos os modelos nas mesmas linhas.
+bootstrap usam apenas essa partição. Na modelagem, o ambiente aplica o
+pré-processamento aprovado à validação e avalia todos os modelos nas mesmas linhas.
 
 Os dados tabulares ficam no ambiente compartilhado. Os agentes trocam metas,
 decisões e metadados pelas mensagens abaixo.
@@ -113,7 +114,7 @@ planos usam os mesmos clientes, amostras bootstrap, algoritmos e limiares.
 Para observar o replanejamento com dados originais e o corte experimental de 0,95, execute
 
 ```powershell
-py -3.12 -X utf8 main.py --metrica roc_auc --limiar-estabilidade-modelo 0.95 --avaliacao-externa
+py -3.12 -X utf8 main.py --tamanho-amostra 1000 --metrica roc_auc --limiar-estabilidade-modelo 0.95 --avaliacao-externa
 ```
 
 Com avaliação externa habilitada, o JSON guarda cada tentativa de modelagem, as variáveis,
@@ -124,13 +125,13 @@ externo sem leitura ou geração de predições.
 ### Verificação da integração
 
 O padrão usa os dados originais.
-Use `python main.py --simular-falhas` para demonstrar a contingência de
+Use `python main.py --tamanho-amostra 1000 --simular-falhas` para demonstrar a contingência de
 limpeza. O ambiente insere, em memória, valores ausentes e um valor extremo
 em uma variável numérica do treino interno. Os CSVs e as partições de
 validação e teste são preservados. Os bootstraps do PCS fazem parte da
 auditoria em ambos os modos.
 O parâmetro `--limiar-estabilidade` controla a auditoria de limpeza. Com o
-valor 1 e a amostra padrão, as duas tentativas são reprovadas e o programa
+valor 1 e `--tamanho-amostra 1000` no exemplo de Bank Churn, as duas tentativas são reprovadas e o programa
 encerra com código 1 e o motivo informado pelo PCS.
 
 Execute `python -m unittest discover -s tests -v` para verificar as partições,
@@ -144,10 +145,12 @@ py -3.12 -X utf8 main.py --dataset data/obesity_risks/train.csv --alvo NObeyesda
 py -3.12 -X utf8 main.py --dataset data/ames_houses/train.csv --alvo SalePrice --tarefa regressao --id-coluna Order --avaliacao-externa
 ```
 
-Os agentes usam apenas o arquivo de treino para escolher o modelo.
-Após a certificação, o programa reajusta o preparo e o modelo com o treino
-completo, mantendo as colunas selecionadas quando o plano reduzido vence.
-Em seguida, grava `predicoes.csv` e só então lê os rótulos externos.
+Os agentes dividem `train.csv` entre treino interno e validação para escolher
+o modelo. Após a certificação, o programa reajusta o preparo e o vencedor
+com o mesmo `train.csv` completo, inclusive quando a seleção usou
+`--tamanho-amostra`. Ele mantém as colunas escolhidas quando o plano reduzido
+vence. Em seguida, gera as predições a partir de `test.csv`, grava
+`predicoes.csv` e só então lê `test_eval.csv` para medir o desempenho.
 
 Por padrão, o programa busca `test.csv` e `test_eval.csv` ao lado do treino.
 Use `--teste-externo` e `--rotulos-externos` para outros caminhos e

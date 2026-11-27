@@ -39,6 +39,7 @@ def gerar_predicoes(treino, teste, preprocessador, candidato, colunas, variaveis
         X_treino = X_treino[variaveis]
         X_teste = X_teste[variaveis]
     modelo = clone(candidato).fit(X_treino, treino[alvo])
+    print(f"[Avaliação externa] Reajuste final concluído. Gerando predições para {len(teste)} linhas de teste.")
     predicoes = pd.DataFrame({
         chave: teste[chave],
         "predicao": modelo.predict(X_teste),
@@ -119,6 +120,7 @@ def avaliar_externamente(arquivo_treino, preprocessador, certificado, *, candida
         print(f"[Avaliação externa] Hipótese fixada pela validação interna: {nome}.")
         treino = pd.read_csv(arquivo_treino, sep=separador, dtype={chave: "string"})
         teste = pd.read_csv(arquivo_teste, sep=separador, dtype={chave: "string"})
+        print(f"[Avaliação externa] Reajuste final | Reajustando {nome} com {len(treino)} linhas do treino completo.")
         predicoes, classes = gerar_predicoes(
             treino, teste, preprocessador, candidato, colunas_entrada, variaveis_selecionadas,
             chave=chave, alvo=alvo, tarefa=tarefa,

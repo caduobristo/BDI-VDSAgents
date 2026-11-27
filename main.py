@@ -15,7 +15,7 @@ def main(
     *, simular_falhas: bool = False, limiar_estabilidade: float = 0.75,
     dataset: str | None = None, alvo: str | None = None,
     tarefa: str = "classificacao", ignorar: list[str] | None = None,
-    tamanho_amostra: int = 1000, separador: str = ",",
+    tamanho_amostra: int = 0, separador: str = ",",
     avaliacao_externa: bool = False, rotulos_externos: Path | None = None,
     saida_externa: Path | None = None, metrica: str | None = None,
     limiar_estabilidade_modelo: float = 0.80,
@@ -112,7 +112,8 @@ if __name__ == "__main__":
     parser.add_argument("--metrica", choices=[m for opcoes in METRICAS_SELECAO.values() for m in opcoes],
                         help="Métrica de seleção interna. Padrões: accuracy em classificação, r2 em regressão e roc_auc no exemplo Bank Churn.")
     parser.add_argument("--ignorar", action="append", help="Coluna de entrada a excluir. Pode ser repetido.")
-    parser.add_argument("--tamanho-amostra", type=int, default=1000, help="Limite de linhas. Use 0 para ler todas.")
+    parser.add_argument("--tamanho-amostra", type=int, default=0,
+                        help="Limite de linhas para uma rodada rápida de seleção. O padrão (0) usa todos os dados de treino.")
     parser.add_argument("--separador", default=",", help="Separador de campos do CSV.")
     parser.add_argument("--simular-falhas", action="store_true",
                         help="Injeta falhas no treino para demonstrar a contingência de limpeza.")

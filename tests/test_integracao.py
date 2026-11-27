@@ -22,6 +22,8 @@ class FluxoAgentesTest(unittest.TestCase):
         self.assertEqual(resultado.returncode, 0, log + resultado.stderr)
         treino = "Iniciando treinamento de hipóteses concorrentes"
         self.assertEqual(log.count(treino), 1, log)
+        self.assertIn("Agent:ModelAgent", log)
+        self.assertLess(log.index("Environment DataScienceEnv created"), log.index("Executando Plano A"))
         for evento in ("Autorização para modelagem recebida", "Matriz de features aprovadas recebida"):
             self.assertIn(evento, log)
             self.assertLess(log.index(evento), log.index(treino))
@@ -31,16 +33,18 @@ class FluxoAgentesTest(unittest.TestCase):
     def test_aprovacao_direta(self):
         resultado = self.executar()
         self.verificar_entrega(resultado)
+        self.assertIn("80454 linhas de treino e 26818 de validação", resultado.stdout)
         self.assertNotIn("Ativando Plano B", resultado.stdout)
 
     def test_recuperacao_pelo_plano_b(self):
-        resultado = self.executar("--simular-falhas")
+        resultado = self.executar("--tamanho-amostra", "1000", "--simular-falhas")
         self.verificar_entrega(resultado)
+        self.assertIn("750 linhas de treino e 250 de validação", resultado.stdout)
         self.assertEqual(resultado.stdout.count("Ativando Plano B"), 1)
         self.assertLess(resultado.stdout.index("Ativando Plano B"), resultado.stdout.index("Iniciando treinamento"))
 
     def test_reprovacao_das_duas_tentativas(self):
-        resultado = self.executar("--limiar-estabilidade", "1")
+        resultado = self.executar("--tamanho-amostra", "1000", "--limiar-estabilidade", "1")
         self.assertEqual(resultado.returncode, 1, resultado.stdout + resultado.stderr)
         self.assertIn("Pré-processamento reprovado", resultado.stderr)
         self.assertEqual(resultado.stdout.count("REJEITADO."), 2)
@@ -67,18 +71,19 @@ class FluxoAgentesTest(unittest.TestCase):
         resultado = self.executar("--dataset", "data/online_shopping/train.csv", "--alvo", "Inexistente")
         self.assertEqual(resultado.returncode, 1)
         self.assertIn("Coluna alvo 'Inexistente' ausente no CSV", resultado.stderr)
-        self.assertNotIn("[ExploreAgent]", resultado.stdout)
+        self.assertNotIn("Agent:ExploreAgent", resultado.stdout)
 
     def test_esgota_planos_sem_abrir_rotulos_externos(self):
         with TemporaryDirectory() as temp:
             pasta = Path(temp)
-            resultado = self.executar("--limiar-estabilidade-modelo", "1",
+            resultado = self.executar("--tamanho-amostra", "1000", "--limiar-estabilidade-modelo", "1",
                                       "--avaliacao-externa", "--saida-externa", temp,
                                       "--rotulos-externos", str(pasta / "rotulos_inexistentes.csv"))
             self.assertEqual(resultado.returncode, 1, resultado.stdout + resultado.stderr)
             self.assertIn("Modelagem reprovada", resultado.stderr)
             self.assertEqual(resultado.stdout.count("Troca de plano:"), 1)
             self.assertEqual(resultado.stdout.count("Iniciando treinamento de hipóteses"), 2)
+            self.assertNotIn("Reajuste final", resultado.stdout)
             self.assertNotIn("Lendo rótulos", resultado.stdout)
             ensaio, = pasta.iterdir()
             self.assertFalse((ensaio / "predicoes.csv").exists())

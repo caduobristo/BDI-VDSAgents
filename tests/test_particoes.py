@@ -11,7 +11,7 @@ from agents.model_agent import ModelAgent, PLANO_COMPLETO, PLANO_REDUZIDO
 class ParticoesTest(unittest.TestCase):
     def test_plano_reduzido_seleciona_variaveis_somente_no_treino(self):
         env = DataScienceEnv("TesteSelecao", alvo="Exited", ignorar=["id", "CustomerId", "Surname"])
-        env.carregar_dataset("ExploreAgent", "data/bank_churn/train.csv")
+        env.carregar_dataset("ExploreAgent", "data/bank_churn/train.csv", sample_size=1000)
         env.aplicar_preparo("ExploreAgent", *ExploreAgent.PREPARO_PADRAO)
         env.gerar_perturbacoes_bootstrap("PCSAgent")
         candidatos = ModelAgent.criar_candidatos(env.tarefa)
@@ -25,7 +25,7 @@ class ParticoesTest(unittest.TestCase):
 
     def test_teste_reservado_nos_dois_planos(self):
         env = DataScienceEnv("TesteParticoes", alvo="Exited", ignorar=["id", "CustomerId", "Surname"])
-        env.carregar_dataset("ExploreAgent", "data/bank_churn/train.csv")
+        env.carregar_dataset("ExploreAgent", "data/bank_churn/train.csv", sample_size=1000)
         treino, teste = env.raw_data.index, env.raw_test.index
         self.assertEqual((len(treino), len(teste)), (750, 250))
         self.assertTrue(treino.intersection(teste).empty)
